@@ -156,6 +156,7 @@ input[type="number"] { width: 72px; }
   z-index: 2; transition: none;
   box-shadow: 0 14px 30px rgba(40, 40, 100, 0.22);
 }
+.item.shift { transition: transform 0.2s ease; }
 .item.drop-above::before, .item.drop-below::after {
   content: ""; position: absolute; left: 12px; right: 12px; height: 3px;
   border-radius: 3px; background: var(--accent);
@@ -480,6 +481,7 @@ function startDrag(e) {
   if (fromIndex < 0) return;
   const me = pending[fromIndex];
 
+  // Drags stay inside the same priority group.
   let lo = fromIndex;
   let hi = fromIndex;
   while (lo > 0 && !!pending[lo - 1].priority === !!me.priority) lo--;
@@ -489,11 +491,19 @@ function startDrag(e) {
   const others = [...$("#list").querySelectorAll("li[data-id]")]
     .filter((r) => r.dataset.id !== id && groupIds.has(r.dataset.id));
 
+  // Measure the layout before anything moves.
   const rect = li.getBoundingClientRect();
+  const gap = parseFloat(getComputedStyle($("#list")).rowGap) || 10;
   drag = {
     id, li, pointerId: e.pointerId, startY: e.clientY,
-    centerY: rect.top + rect.height / 2, lo, fromIndex, others, k: null,
+    centerY: rect.top + rect.height / 2,
+    step: rect.height + gap,          // distance one row moves when it shifts a slot
+    lo, f: fromIndex - lo,            // f = where the dragged row starts inside the group
+    others,
+    mids: others.map((r) => { const b = r.getBoundingClientRect(); return b.top + b.height / 2; }),
+    k: null,                          // where it will land inside the group
   };
+  others.forEach((r) => r.classList.add("shift"));
   handleEl.setPointerCapture(e.pointerId);
   li.classList.add("dragging");
   e.preventDefault();
@@ -504,38 +514,52 @@ function moveDrag(e) {
   const dy = e.clientY - drag.startY;
   drag.li.style.transform = `translateY(${dy}px)`;
 
+  // Count the rows that the dragged row's centre has passed.
   const y = drag.centerY + dy;
-  let k = 0; // how many other rows in the group sit above the dragged row
-  drag.others.forEach((r) => {
-    const b = r.getBoundingClientRect();
-    if (b.top + b.height / 2 < y) k++;
-  });
+  let k = 0;
+  drag.mids.forEach((m) => { if (m < y) k++; });
   drag.k = k;
 
-  drag.others.forEach((r) => r.classList.remove("drop-above", "drop-below"));
-  if (drag.others.length) {
-    if (k < drag.others.length) drag.others[k].classList.add("drop-above");
-    else drag.others[drag.others.length - 1].classList.add("drop-below");
-  }
+  // Other rows slide one slot to open a gap at the landing spot.
+  drag.others.forEach((r, j) => {
+    const newSlot = j < k ? j : j + 1;
+    const oldSlot = j < drag.f ? j : j + 1;
+    const shift = newSlot > oldSlot ? drag.step : newSlot < oldSlot ? -drag.step : 0;
+    r.style.transform = shift ? `translateY(${shift}px)` : "";
+  });
 }
 
 function endDrag(e, apply) {
   if (!drag || e.pointerId !== drag.pointerId) return;
   const d = drag;
   drag = null;
-  d.li.style.transform = "";
   d.li.classList.remove("dragging");
-  d.others.forEach((r) => r.classList.remove("drop-above", "drop-below"));
-  if (!apply || d.k === null) return;
 
-  const at = d.lo + d.k;
-  if (at === d.fromIndex) return; // dropped where it started
-  checkpoint();
+  if (!apply || d.k === null || d.k === d.f) {
+    resetDrag(d);
+    return;
+  }
+  // Slide the dragged row into the gap, then save the new order.
+  d.li.classList.add("shift");
+  d.li.style.transform = `translateY(${(d.k - d.f) * d.step}px)`;
+  setTimeout(() => commitDrag(d), 200);
+}
 
+function resetDrag(d) {
+  d.li.style.transform = "";
+  d.li.classList.remove("shift");
+  d.others.forEach((r) => {
+    r.style.transform = "";
+    r.classList.remove("shift");
+  });
+}
+
+function commitDrag(d) {
   const list = visiblePending();
   const item = list.find((x) => x.id === d.id);
   const rest = list.filter((x) => x.id !== d.id);
-  rest.splice(at, 0, item);
+  checkpoint();
+  rest.splice(d.lo + d.k, 0, item);
   writePendingOrder(rest);
   save();
   render();
