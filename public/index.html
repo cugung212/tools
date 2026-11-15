@@ -3,52 +3,35 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" media="(prefers-color-scheme: light)" content="#e6ecff">
-<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f1024">
+<meta name="theme-color" content="#0f1024">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="To do">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>To do</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>✅</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+/* Dark theme only, so the phone's top bar always matches the page */
 :root {
-  --bg: linear-gradient(160deg, #e6ecff 0%, #f1e9ff 45%, #ffe9f2 100%);
-  --ink: #1d1f3a;
-  --muted: #646889;
-  --line: rgba(99, 102, 180, 0.16);
-  --card: rgba(255, 255, 255, 0.7);
-  --card-strong: rgba(255, 255, 255, 0.92);
-  --accent: #5b5bd6;
-  --accent-2: #14b8a6;
-  --accent-ink: #ffffff;
-  --danger: #dc2626;
-  --star: #f59e0b;
+  color-scheme: dark;
+  --bg: linear-gradient(160deg, #0f1024 0%, #1a1240 50%, #0b2430 100%);
+  --ink: #eceaff;
+  --muted: #a3a6cf;
+  --line: rgba(255, 255, 255, 0.1);
+  --card: rgba(255, 255, 255, 0.06);
+  --card-strong: rgba(30, 28, 60, 0.8);
+  --accent: #9d8cff;
+  --accent-2: #2dd4bf;
+  --accent-ink: #0f0d24;
+  --danger: #fb7185;
+  --star: #fbbf24;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]), :root[data-theme="dark"] {
-    --bg: linear-gradient(160deg, #0f1024 0%, #1a1240 50%, #0b2430 100%);
-    --ink: #eceaff;
-    --muted: #a3a6cf;
-    --line: rgba(255, 255, 255, 0.1);
-    --card: rgba(255, 255, 255, 0.06);
-    --card-strong: rgba(30, 28, 60, 0.8);
-    --accent: #9d8cff;
-    --accent-2: #2dd4bf;
-    --accent-ink: #0f0d24;
-    --danger: #fb7185;
-    --star: #fbbf24;
-  }
-  html { background: #14123a; }
-  :root:not([data-theme="light"]) .bg span,
-  :root[data-theme="dark"] .bg span { opacity: 0.3; }
-}
-
-html { background: #f1e9ff; }
+html { background: #0f1024; } /* shown if the page is pulled past its end */
 html, body { touch-action: manipulation; } /* no double-tap zoom */
 * { box-sizing: border-box; }
 body {
+  position: relative;
   margin: 0;
   min-height: 100vh;
   min-height: 100dvh;
@@ -61,10 +44,10 @@ body {
 }
 
 /* Animated background: soft colour orbs that drift slowly */
-.bg { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; background: var(--bg); }
+.bg { position: absolute; top: -40vh; left: 0; right: 0; bottom: 0; z-index: -1; overflow: hidden; pointer-events: none; background: var(--bg); }
 .bg span {
   position: absolute; border-radius: 50%; filter: blur(70px);
-  opacity: 0.55; animation: drift 26s ease-in-out infinite alternate;
+  opacity: 0.3; animation: drift 26s ease-in-out infinite alternate;
 }
 .bg span:nth-child(1) { width: 52vmax; height: 52vmax; top: -18vmax; left: -14vmax; background: #a5b4fc; }
 .bg span:nth-child(2) { width: 48vmax; height: 48vmax; bottom: -18vmax; right: -14vmax; background: #5eead4; animation-duration: 32s; animation-delay: -9s; }
