@@ -200,6 +200,12 @@ input[type="number"] { width: 72px; }
 }
 .del:hover { color: var(--danger); background: rgba(220, 38, 38, 0.08); box-shadow: none; transform: none; border: none; }
 
+.add-row {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  color: var(--muted); cursor: pointer; border-radius: 16px; list-style: none;
+}
+.add-row .plus { width: 24px; text-align: center; font-size: 1.4rem; line-height: 1; }
+.add-row:hover, .add-row:focus-visible { color: var(--ink); }
 .empty {
   text-align: center; color: var(--muted); padding: 24px 16px;
   border: 1px dashed var(--line); border-radius: 16px; background: transparent;
@@ -773,6 +779,68 @@ function commitDrag(d) {
   render();
 }
 
+function newId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+// Finish an edit. An empty item is removed when you leave it (as in Google Keep).
+// createNext: Enter was pressed, so a new empty item is added below.
+function commitEdit(id, text, createNext) {
+  const t = find(id);
+  editingId = null;
+  if (!t) return render();
+  const value = text.trim();
+  if (!value) {
+    checkpoint();
+    tasks = tasks.filter((x) => x.id !== id);
+    picked.delete(id);
+    save();
+    return render();
+  }
+  const changed = value !== t.text;
+  if (changed || createNext) checkpoint();
+  if (changed) t.text = value;
+  if (createNext) {
+    const fresh = { id: newId(), text: "", done: false, doneAt: null, priority: !!t.priority };
+    tasks.splice(tasks.indexOf(t) + 1, 0, fresh);
+    editingId = fresh.id;
+  }
+  if (changed || createNext) save();
+  render();
+}
+
+// Backspace on an empty item: remove it and continue editing the item above.
+function deleteAndEditPrevious(id) {
+  const list = visiblePending();
+  const i = list.findIndex((x) => x.id === id);
+  const prev = i > 0 ? list[i - 1] : null;
+  checkpoint();
+  tasks = tasks.filter((x) => x.id !== id);
+  picked.delete(id);
+  editingId = prev ? prev.id : null;
+  save();
+  render();
+}
+
+function addBlank() {
+  checkpoint();
+  const fresh = { id: newId(), text: "", done: false, doneAt: null, priority: false };
+  tasks.push(fresh);
+  editingId = fresh.id;
+  save();
+  render();
+}
+
+function addRow() {
+  return el("li", {
+    class: "add-row", tabindex: 0,
+    onclick: addBlank,
+    onkeydown: (e) => { if (e.key === "Enter") addBlank(); },
+  },
+    el("span", { class: "plus", "aria-hidden": "true" }, "+"),
+    el("span", {}, "List item"));
+}
+
 function togglePriority(id) {
   const t = find(id);
   if (!t) return;
@@ -805,21 +873,32 @@ function row(t) {
   }
 
   if (editingId === t.id) {
-    let cancel = false;
+    let handled = false; // set when a key has already finished this edit
     const input = el("input", {
       class: "edit", type: "text", value: t.text, maxlength: 500, "aria-label": "Edit to-do",
+      enterkeyhint: "next",
       onkeydown: (e) => {
-        if (e.key === "Enter") e.target.blur();
-        if (e.key === "Escape") { cancel = true; e.target.blur(); }
+        if (e.key === "Enter") {
+          e.preventDefault();
+          handled = true;
+          commitEdit(t.id, e.target.value, true);
+        } else if (e.key === "Backspace" && e.target.value === "") {
+          e.preventDefault();
+          handled = true;
+          deleteAndEditPrevious(t.id);
+        } else if (e.key === "Escape") {
+          handled = true;
+          editingId = null;
+          render();
+        }
       },
       onblur: (e) => {
-        if (editingId !== t.id) return;
-        editingId = null;
-        if (cancel) render();
-        else rename(t.id, e.target.value);
+        if (handled || editingId !== t.id) return;
+        commitEdit(t.id, e.target.value, false);
       },
     });
-    setTimeout(() => { input.focus(); input.select(); }, 0);
+    // Cursor goes to the end of the text. The text is NOT selected.
+    setTimeout(() => { input.focus(); const n = input.value.length; input.setSelectionRange(n, n); }, 0);
     parts.push(input);
   } else {
     parts.push(el("span", {
@@ -844,6 +923,7 @@ function render() {
       tasks.length ? "All done. Add the next one above." : "Nothing here yet. Type a to-do above and press Enter."));
   }
   pending.forEach((t) => list.append(row(t)));
+  list.append(addRow());
 
   const doneList = $("#done");
   doneList.replaceChildren();
