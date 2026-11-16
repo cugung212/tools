@@ -212,9 +212,13 @@ input[type="number"] { width: 72px; }
 .tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
   display: flex; gap: 8px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
-  background: rgba(15, 16, 36, 0.75);
-  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  background: #111a33; /* solid, so no page colour shows through */
   border-top: 1px solid var(--line);
+}
+/* Continue the solid colour below the screen edge, so nothing light shows under the buttons */
+.tabs::after {
+  content: ""; position: absolute; top: 100%; left: 0; right: 0; height: 100vh;
+  background: #111a33;
 }
 .tab { flex: 1; min-height: 42px; padding: 10px 14px; font-weight: 600; }
 .tab[aria-pressed="true"] {
