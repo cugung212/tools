@@ -388,6 +388,11 @@ input[type="number"]:focus { border-color: var(--accent); box-shadow: 0 0 0 4px 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+.result, .result * {
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  cursor: default; caret-color: transparent;
+}
+#gen.busy { cursor: default; }
 </style>
 
 <div class="app">
@@ -979,6 +984,7 @@ function initRandom(root) {
 
     var nums = generate(min, max, count, repeat);
     lastText = nums.join(", ");
+    genBtn.classList.add("busy");
     var die = dieEl;
     die.classList.remove("roll"); void die.getBoundingClientRect(); die.classList.add("roll");
     resultEl.classList.remove("flash"); void resultEl.offsetWidth; resultEl.classList.add("flash");
@@ -996,6 +1002,7 @@ function initRandom(root) {
     resultEl.appendChild(box);
     copyBtn.hidden = false; copyBtn.textContent = "Copy";
     function settle() {
+      genBtn.classList.remove("busy");
       for (var q = 0; q < spans.length; q++) spans[q].textContent = String(nums[q]);
       box.className = "nums " + cls + " final";
     }
