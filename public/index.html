@@ -184,6 +184,7 @@ input[type="number"] { width: 72px; }
   white-space: pre-wrap;
 }
 .item.done .text { color: var(--muted); text-decoration: line-through; }
+.text:focus, .text:focus-visible { outline: none; }
 .edit { flex: 1; }
 textarea.edit { display: block; resize: none; overflow: hidden; line-height: 1.35; font-family: inherit; min-height: 46px; }
 
@@ -472,6 +473,7 @@ const $ = (s) => document.querySelector(s);
 let tasks = [];
 let picked = new Set();
 let editingId = null;
+let focusId = null; // to-do that should receive the cursor after the next redraw
 let writeChain = Promise.resolve();
 let loaded = false; // true once the server copy has been checked
 
@@ -789,13 +791,11 @@ function newId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
-// Finish an edit. An empty item is removed when you leave it (as in Google Keep).
-// createNext: Enter was pressed, so a new empty item is added below.
-function commitEdit(id, text, createNext) {
+// Saved when the cursor leaves a to-do. An empty to-do is removed, as in Google Keep.
+function commitText(id, raw) {
   const t = find(id);
-  editingId = null;
-  if (!t) return render();
-  const value = text.trim();
+  if (!t) return;
+  const value = raw.replace(/\u00a0/g, " ").trim().slice(0, 500);
   if (!value) {
     checkpoint();
     tasks = tasks.filter((x) => x.id !== id);
@@ -803,19 +803,14 @@ function commitEdit(id, text, createNext) {
     save();
     return render();
   }
-  const changed = value !== t.text;
-  if (changed || createNext) checkpoint();
-  if (changed) t.text = value;
-  if (createNext) {
-    const fresh = { id: newId(), text: "", done: false, doneAt: null, priority: !!t.priority };
-    tasks.splice(tasks.indexOf(t) + 1, 0, fresh);
-    editingId = fresh.id;
+  if (value !== t.text) {
+    checkpoint();
+    t.text = value;
+    save();
   }
-  if (changed || createNext) save();
-  render();
 }
 
-// Backspace on an empty item: remove it and continue editing the item above.
+// Backspace on an empty to-do: remove it and move the cursor to the one above.
 function deleteAndEditPrevious(id) {
   const list = visiblePending();
   const i = list.findIndex((x) => x.id === id);
@@ -823,7 +818,7 @@ function deleteAndEditPrevious(id) {
   checkpoint();
   tasks = tasks.filter((x) => x.id !== id);
   picked.delete(id);
-  editingId = prev ? prev.id : null;
+  focusId = prev ? prev.id : null;
   save();
   render();
 }
@@ -832,7 +827,7 @@ function addBlank() {
   checkpoint();
   const fresh = { id: newId(), text: "", done: false, doneAt: null, priority: false };
   tasks.push(fresh);
-  editingId = fresh.id;
+  focusId = fresh.id;
   save();
   render();
 }
@@ -880,43 +875,27 @@ function row(t) {
   bar.push(el("span", { class: "spacer" }));
   bar.push(el("button", { class: "del", type: "button", "aria-label": "Delete to-do", onclick: () => remove(t.id) }, "×"));
 
-  let content;
-  if (editingId === t.id) {
-    let handled = false; // set when a key has already finished this edit
-    content = el("textarea", {
-      class: "edit", rows: 1, maxlength: 500, "aria-label": "Edit to-do",
-      oninput: (e) => autosize(e.target),
-      onkeydown: (e) => {
-        // Enter adds a new line inside this to-do (default behavior of a text area)
-        if (e.key === "Backspace" && e.target.value === "") {
-          e.preventDefault();
-          handled = true;
-          deleteAndEditPrevious(t.id);
-        } else if (e.key === "Escape") {
-          handled = true;
-          editingId = null;
-          render();
-        }
-      },
-      onblur: (e) => {
-        if (handled || editingId !== t.id) return;
-        commitEdit(t.id, e.target.value, false);
-      },
-    }, t.text);
-    // Cursor goes to the end of the text. The text is NOT selected.
-    setTimeout(() => {
-      content.focus();
-      const n = content.value.length;
-      content.setSelectionRange(n, n);
-      autosize(content);
-    }, 0);
-  } else {
-    content = el("span", {
-      class: "text", tabindex: 0, title: "Click to edit",
-      onclick: () => { editingId = t.id; render(); },
-      onkeydown: (e) => { if (e.key === "Enter") { editingId = t.id; render(); } },
-    }, t.text);
-  }
+  const content = el("span", {
+    class: "text", "data-id": t.id,
+    contenteditable: "true", spellcheck: "false", role: "textbox", "aria-label": "To-do text",
+    onblur: (e) => commitText(t.id, e.target.innerText),
+    onkeydown: (e) => {
+      // Enter adds a new line inside this to-do (default behavior of an editable text)
+      if (e.key === "Backspace" && e.target.innerText.trim() === "") {
+        e.preventDefault();
+        deleteAndEditPrevious(t.id);
+      } else if (e.key === "Escape") {
+        e.target.textContent = t.text;
+        e.target.blur();
+      }
+    },
+    onpaste: (e) => {
+      // Paste plain text only, so the layout stays the same
+      e.preventDefault();
+      const txt = (e.clipboardData || window.clipboardData).getData("text/plain");
+      document.execCommand("insertText", false, txt);
+    },
+  }, t.text);
 
   return el("li", { class: classes.join(" "), "data-id": t.id }, content, el("div", { class: "bar" }, ...bar));
 }
@@ -944,6 +923,20 @@ function render() {
   $("#clear-pick").hidden = picked.size === 0;
   $("#undo").disabled = !undoStack.length;
   $("#redo").disabled = !redoStack.length;
+
+  if (focusId) {
+    const target = document.querySelector('.text[data-id="' + focusId + '"]');
+    focusId = null;
+    if (target) {
+      target.focus();
+      const range = document.createRange();
+      range.selectNodeContents(target);
+      range.collapse(false); // cursor at the end of the text
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  }
 }
 
 $("#pick").addEventListener("click", pickRandom);
