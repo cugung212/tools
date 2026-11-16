@@ -1025,15 +1025,25 @@ function initRandom(root) {
     try { if (root.activeElement && root.activeElement.blur) root.activeElement.blur(); } catch (e) {}
     run();
   });
-  /* Enter key generates (buttons keep their normal Enter behavior) */
-  root.addEventListener("keydown", function (e) {
-    if (e.key !== "Enter" || e.isComposing) return;
-    var t = e.target;
-    if (t && t.tagName === "BUTTON") return;
-    e.preventDefault();
+  function generateFromUser() {
     try { if (root.activeElement && root.activeElement.blur) root.activeElement.blur(); } catch (err) {}
     save();
     run();
+  }
+  /* Enter generates from anywhere on the Random Numbers screen (buttons keep their own Enter behavior) */
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" || e.isComposing) return;
+    if (document.getElementById("view-random").hidden) return;
+    var t = e.composedPath ? e.composedPath()[0] : e.target;
+    if (t && t.tagName === "BUTTON") return;
+    e.preventDefault();
+    generateFromUser();
+  });
+  /* A tap on any blank area generates (buttons, number fields and labels keep their own behavior) */
+  root.addEventListener("click", function (e) {
+    var t = e.composedPath()[0];
+    if (t && t.closest && t.closest("button, input, label")) return;
+    generateFromUser();
   });
 
   copyBtn.addEventListener("click", function () {
