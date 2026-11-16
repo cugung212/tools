@@ -57,10 +57,10 @@ body {
   to   { transform: translate3d(7vmax, -5vmax, 0) scale(1.12); }
 }
 
-main { position: relative; max-width: 640px; margin: 0 auto; padding: 36px 0 72px; }
+main { position: relative; max-width: 640px; margin: 0 auto; padding: 36px 0 110px; }
 
 h1 {
-  display: inline-block; font-size: 2.5rem; font-weight: 700; letter-spacing: -0.03em;
+  display: inline-block; font-size: 2.2rem; font-weight: 700; letter-spacing: -0.03em;
   margin: 0 0 6px;
   background: linear-gradient(90deg, var(--accent), var(--accent-2), var(--accent));
   background-size: 200% auto;
@@ -207,10 +207,25 @@ input[type="number"] { width: 72px; }
   .bg span, h1 { animation: none; }
   * { transition: none !important; }
 }
+
+/* Bottom tab bar */
+.tabs {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+  display: flex; gap: 8px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: rgba(15, 16, 36, 0.75);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid var(--line);
+}
+.tab { flex: 1; min-height: 42px; padding: 10px 14px; font-weight: 600; }
+.tab[aria-pressed="true"] {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-color: transparent; color: var(--accent-ink);
+}
 </style>
 </head>
 <body>
 <div class="bg" aria-hidden="true"><span></span><span></span><span></span></div>
+<section id="view-todo" hidden>
 <main>
   <h1>To do</h1>
   <div class="sub"><span id="count"></span><span id="sync"></span></div>
@@ -234,6 +249,191 @@ input[type="number"] { width: 72px; }
   <h2 id="done-head" hidden><span id="done-title"></span></h2>
   <ul id="done" class="list" aria-label="Done to-dos"></ul>
 </main>
+</section>
+
+<section id="view-random">
+  <div id="random-host"></div>
+</section>
+
+<template id="random-template">
+<style>
+:host {
+  display: block; position: relative; color: var(--ink);
+  font-family: "Instrument Sans", system-ui, -apple-system, sans-serif;
+  --bg: linear-gradient(160deg, #0f1024 0%, #1a1240 50%, #0b2430 100%);
+  --ink: #eceaff; --muted: #a3a6cf;
+  --line: rgba(255, 255, 255, 0.1);
+  --card: rgba(255, 255, 255, 0.06);
+  --card-strong: rgba(30, 28, 60, 0.8);
+  --accent: #9d8cff; --accent-2: #2dd4bf; --accent-ink: #0f0d24;
+  --err: #fb7185;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+
+/* Same animated background as the To do screen */
+.bg { position: absolute; top: -40vh; left: 0; right: 0; bottom: 0; z-index: -1; overflow: hidden; pointer-events: none; background: var(--bg); }
+.bg i { position: absolute; border-radius: 50%; filter: blur(70px); opacity: 0.3; animation: drift 26s ease-in-out infinite alternate; }
+.bg i:nth-child(1) { width: 52vmax; height: 52vmax; top: -18vmax; left: -14vmax; background: #a5b4fc; }
+.bg i:nth-child(2) { width: 48vmax; height: 48vmax; bottom: -18vmax; right: -14vmax; background: #5eead4; animation-duration: 32s; animation-delay: -9s; }
+.bg i:nth-child(3) { width: 36vmax; height: 36vmax; top: 35%; left: 35%; background: #f9a8d4; opacity: 0.2; animation-duration: 30s; animation-delay: -15s; }
+@keyframes drift { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(7vmax, -5vmax, 0) scale(1.12); } }
+
+.app {
+  position: relative; max-width: 640px; margin: 0 auto;
+  padding: 36px 16px calc(96px + env(safe-area-inset-bottom, 0px));
+  min-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+}
+
+.hero { display: flex; align-items: center; gap: 14px; margin: 0 0 22px; animation: rise 0.6s both; }
+.die { width: 44px; height: 44px; flex: none; color: var(--accent); filter: drop-shadow(0 6px 12px rgba(157, 140, 255, 0.35)); animation: bob 3.2s ease-in-out infinite; }
+.die.roll { animation: tumble 0.7s cubic-bezier(0.3, 1.4, 0.5, 1); }
+@keyframes bob { 50% { transform: translateY(-4px) rotate(-4deg); } }
+@keyframes tumble { 0% { transform: rotate(0) scale(1); } 40% { transform: rotate(200deg) scale(1.25); } 100% { transform: rotate(360deg) scale(1); } }
+h1 {
+  display: inline-block; margin: 0; font-size: 2.2rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2), var(--accent)); background-size: 200% auto;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  animation: shimmer 8s linear infinite;
+}
+@keyframes shimmer { to { background-position: 200% center; } }
+.sub {
+  display: inline-block; margin-top: 8px; padding: 4px 12px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 999px;
+  font-size: 0.85rem; color: var(--muted);
+}
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+.result {
+  position: relative; min-height: 176px; padding: 22px;
+  display: flex; flex-direction: column; justify-content: center;
+  background: var(--card); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  animation: rise 0.6s 0.08s both;
+}
+.result.flash { animation: flash 0.6s ease-out; }
+@keyframes flash { 0% { box-shadow: 0 0 0 0 rgba(157, 140, 255, 0.55); } 100% { box-shadow: 0 0 0 22px rgba(157, 140, 255, 0); } }
+.result .nums {
+  display: flex; flex-wrap: wrap; gap: 8px 14px; justify-content: center;
+  font-variant-numeric: tabular-nums; font-weight: 800; line-height: 1.1; word-break: break-all;
+  color: var(--ink); text-shadow: 0 0 24px rgba(157, 140, 255, 0.35);
+}
+.result .nums.one { font-size: 4.2rem; }
+.result .nums.few { font-size: 2.4rem; }
+.result .nums.many { font-size: 1.5rem; font-weight: 700; }
+.result .nums span { display: inline-block; }
+.result .nums.final span { animation: pop 0.28s cubic-bezier(0.2, 1.4, 0.4, 1) both; animation-delay: calc(var(--i, 0) * 12ms); }
+.result .nums.rolling { opacity: 0.7; filter: blur(0.6px); }
+@keyframes pop { 0% { opacity: 0; transform: translateY(18px) scale(0.6); } 100% { opacity: 1; transform: none; } }
+.result .hint { color: var(--muted); text-align: center; font-size: 1.05rem; animation: breathe 2.6s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: 0.55; } }
+.result .error { color: var(--err); text-align: center; font-size: 1rem; font-weight: 600; animation: shake 0.4s; }
+@keyframes shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+
+.actions { display: flex; gap: 10px; margin: 14px 0 22px; animation: rise 0.6s 0.16s both; }
+button {
+  font: inherit; color: var(--ink); min-height: 52px; padding: 0 18px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--card-strong); border-radius: 999px;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s, box-shadow 0.2s, border-color 0.2s;
+}
+button:hover { border-color: var(--accent); }
+button:active { transform: scale(0.97); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#gen {
+  position: relative; overflow: hidden; flex: 1;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-color: transparent; color: var(--accent-ink); font-size: 1.1rem; font-weight: 600;
+  box-shadow: 0 6px 18px rgba(157, 140, 255, 0.3);
+}
+#gen::after {
+  content: ""; position: absolute; top: 0; left: -60%; width: 40%; height: 100%; transform: skewX(-20deg);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  animation: shine 3.4s ease-in-out infinite;
+}
+@keyframes shine { 0%, 60% { left: -60%; } 100% { left: 130%; } }
+#copy { font-weight: 600; padding: 0 22px; }
+
+.settings {
+  background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 4px 16px;
+  box-shadow: var(--shadow); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  animation: rise 0.6s 0.24s both;
+}
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.row:last-child { border-bottom: 0; }
+.row > label, .row .lbl { font-size: 1.05rem; }
+.row small { display: block; color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
+input[type="number"] {
+  width: 130px; font: inherit; font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right;
+  padding: 10px 14px; min-width: 0; color: var(--ink); outline: none;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--card-strong);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+input[type="number"]:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(157, 140, 255, 0.2); }
+.switch { display: block; position: relative; width: 54px; height: 32px; flex: none; }
+.switch input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.switch span { position: absolute; inset: 0; background: var(--line); border-radius: 32px; transition: background 0.25s; }
+.switch span::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 26px; height: 26px; border-radius: 50%;
+  background: #fff; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25); transition: transform 0.3s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+.switch input:checked + span { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+.switch input:checked + span::after { transform: translateX(22px); }
+.switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+
+<div class="bg" aria-hidden="true"><i></i><i></i><i></i></div>
+<div class="app">
+  <header class="hero">
+    <svg class="die" viewBox="0 0 48 48" aria-hidden="true">
+      <rect x="4" y="4" width="40" height="40" rx="11" fill="currentColor"/>
+      <g fill="#0f0d24"><circle cx="15" cy="15" r="3.4"/><circle cx="33" cy="15" r="3.4"/><circle cx="24" cy="24" r="3.4"/><circle cx="15" cy="33" r="3.4"/><circle cx="33" cy="33" r="3.4"/></g>
+    </svg>
+    <div>
+      <h1>Random numbers</h1>
+      <span class="sub">Pick a range, tap, done</span>
+    </div>
+  </header>
+
+  <section class="result" aria-live="polite" id="result">
+    <div class="hint">Tap Generate</div>
+  </section>
+
+  <div class="actions">
+    <button id="gen" type="button">Generate</button>
+    <button id="copy" type="button" hidden>Copy</button>
+  </div>
+
+  <section class="settings">
+    <div class="row">
+      <label for="min">Minimum</label>
+      <input id="min" type="number" step="1" enterkeyhint="go">
+    </div>
+    <div class="row">
+      <label for="max">Maximum</label>
+      <input id="max" type="number" step="1" enterkeyhint="go">
+    </div>
+    <div class="row">
+      <label for="count">How many<small>1 to 1000 at a time</small></label>
+      <input id="count" type="number" step="1" min="1" max="1000" enterkeyhint="go">
+    </div>
+    <label class="row" for="repeat">
+      <span class="lbl">Allow repeats<small>Same number can appear more than once</small></span>
+      <span class="switch"><input id="repeat" type="checkbox" role="switch"><span></span></span>
+    </label>
+  </section>
+</div>
+</template>
+
+<nav class="tabs" aria-label="Apps">
+  <button class="tab" id="tab-random" type="button" aria-pressed="false">Random</button>
+  <button class="tab" id="tab-todo" type="button" aria-pressed="false">To do</button>
+</nav>
 
 <script>
 const API = "/api/todos";
@@ -670,8 +870,180 @@ $("#pick-count").addEventListener("change", () => {
 ["gesturestart", "gesturechange", "gestureend"].forEach((type) =>
   document.addEventListener(type, (e) => e.preventDefault(), { passive: false }));
 
+function showView(name) {
+  const random = name === "random";
+  document.getElementById("view-random").hidden = !random;
+  document.getElementById("view-todo").hidden = random;
+  document.getElementById("tab-random").setAttribute("aria-pressed", String(random));
+  document.getElementById("tab-todo").setAttribute("aria-pressed", String(!random));
+}
+document.getElementById("tab-random").addEventListener("click", () => showView("random"));
+document.getElementById("tab-todo").addEventListener("click", () => showView("todo"));
+
+/* ---------- Random Numbers (logic unchanged from the original app) ---------- */
+function initRandom(root) {
+  var KEY = "randomNumbers.settings.v1";
+  var DEFAULTS = { min: "1", max: "100", count: "1", repeat: true };
+  var MAX_ABS = 1e15, MAX_COUNT = 1000;
+
+  function byId(id) { return root.getElementById(id); }
+  var minEl = byId("min"), maxEl = byId("max"), countEl = byId("count"), repeatEl = byId("repeat");
+  var resultEl = byId("result"), copyBtn = byId("copy"), genBtn = byId("gen");
+  var dieEl = root.querySelector(".die");
+  var lastText = "", runId = 0;
+
+  function load() {
+    var s = {};
+    try { s = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { s = {}; }
+    return {
+      min: typeof s.min === "string" ? s.min : DEFAULTS.min,
+      max: typeof s.max === "string" ? s.max : DEFAULTS.max,
+      count: typeof s.count === "string" ? s.count : DEFAULTS.count,
+      repeat: typeof s.repeat === "boolean" ? s.repeat : DEFAULTS.repeat
+    };
+  }
+  function save() {
+    var s = { min: minEl.value, max: maxEl.value, count: countEl.value, repeat: repeatEl.checked };
+    try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {}
+  }
+  var saved = load();
+  minEl.value = saved.min; maxEl.value = saved.max; countEl.value = saved.count; repeatEl.checked = saved.repeat;
+  ["input", "change"].forEach(function (ev) {
+    [minEl, maxEl, countEl, repeatEl].forEach(function (el) { el.addEventListener(ev, save); });
+  });
+  window.addEventListener("pagehide", save);
+  document.addEventListener("visibilitychange", function () { if (document.hidden) save(); });
+
+  function u32() { var a = new Uint32Array(1); crypto.getRandomValues(a); return a[0]; }
+  function randInt(min, max) {
+    var range = max - min + 1, x;
+    if (range <= 4294967296) {
+      var limit = Math.floor(4294967296 / range) * range;
+      do { x = u32(); } while (x >= limit);
+      return min + (x % range);
+    }
+    var r = BigInt(range), lim = (BigInt("18446744073709551616") / r) * r, b;
+    do { b = (BigInt(u32()) << BigInt(32)) | BigInt(u32()); } while (b >= lim);
+    return min + Number(b % r);
+  }
+  function generate(min, max, count, repeat) {
+    var out = [], i;
+    if (repeat) {
+      for (i = 0; i < count; i++) out.push(randInt(min, max));
+      return out;
+    }
+    var range = max - min + 1;
+    if (range <= 200000) {
+      var pool = new Array(range);
+      for (i = 0; i < range; i++) pool[i] = min + i;
+      for (i = 0; i < count; i++) {           /* partial Fisher-Yates */
+        var j = i + randInt(0, range - i - 1);
+        var t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+        out.push(pool[i]);
+      }
+      return out;
+    }
+    var seen = new Set();
+    while (out.length < count) {
+      var n = randInt(min, max);
+      if (!seen.has(n)) { seen.add(n); out.push(n); }
+    }
+    return out;
+  }
+
+  function showError(msg) {
+    resultEl.innerHTML = "";
+    var d = document.createElement("div"); d.className = "error"; d.textContent = msg;
+    resultEl.appendChild(d);
+    copyBtn.hidden = true; lastText = "";
+  }
+  function parseInt10(v) {
+    if (v === null || String(v).trim() === "") return NaN;
+    var n = Number(v);
+    return Number.isInteger(n) ? n : NaN;
+  }
+  function run() {
+    var token = ++runId;
+    var min = parseInt10(minEl.value), max = parseInt10(maxEl.value), count = parseInt10(countEl.value);
+    if (isNaN(min) || isNaN(max)) return showError("Enter whole numbers for minimum and maximum.");
+    if (Math.abs(min) > MAX_ABS || Math.abs(max) > MAX_ABS) return showError("Use numbers between -1,000,000,000,000,000 and 1,000,000,000,000,000.");
+    if (min > max) return showError("Minimum must be less than or equal to maximum.");
+    if (isNaN(count) || count < 1 || count > MAX_COUNT) return showError("How many must be a whole number from 1 to " + MAX_COUNT + ".");
+    var repeat = repeatEl.checked, range = max - min + 1;
+    if (!repeat && count > range) return showError("Only " + range.toLocaleString() + " different numbers fit in that range. Lower How many or turn on Allow repeats.");
+
+    var nums = generate(min, max, count, repeat);
+    lastText = nums.join(", ");
+    var die = dieEl;
+    die.classList.remove("roll"); void die.getBoundingClientRect(); die.classList.add("roll");
+    resultEl.classList.remove("flash"); void resultEl.offsetWidth; resultEl.classList.add("flash");
+    var cls = nums.length === 1 ? "one" : nums.length <= 6 ? "few" : "many";
+    resultEl.innerHTML = "";
+    var box = document.createElement("div");
+    box.className = "nums " + cls + " rolling";
+    var spans = [];
+    nums.forEach(function (n, i) {
+      var sp = document.createElement("span");
+      sp.textContent = String(n);
+      sp.style.setProperty("--i", Math.min(i, 20));
+      box.appendChild(sp); spans.push(sp);
+    });
+    resultEl.appendChild(box);
+    copyBtn.hidden = false; copyBtn.textContent = "Copy";
+    function settle() {
+      for (var q = 0; q < spans.length; q++) spans[q].textContent = String(nums[q]);
+      box.className = "nums " + cls + " final";
+    }
+    function scramble() {
+      for (var k = 0; k < spans.length; k++) spans[k].textContent = String(randInt(min, max));
+    }
+    var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) { settle(); return; }
+    scramble();
+    var ticks = 0, timer = setInterval(function () {
+      if (token !== runId) { clearInterval(timer); return; }
+      if (++ticks >= 5) { clearInterval(timer); settle(); return; }
+      scramble();
+    }, 40);
+  }
+
+  genBtn.addEventListener("click", function () {
+    try { if (root.activeElement && root.activeElement.blur) root.activeElement.blur(); } catch (e) {}
+    run();
+  });
+  /* Enter key generates (buttons keep their normal Enter behavior) */
+  root.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" || e.isComposing) return;
+    var t = e.target;
+    if (t && t.tagName === "BUTTON") return;
+    e.preventDefault();
+    try { if (root.activeElement && root.activeElement.blur) root.activeElement.blur(); } catch (err) {}
+    save();
+    run();
+  });
+
+  copyBtn.addEventListener("click", function () {
+    if (!lastText) return;
+    function done() { copyBtn.textContent = "Copied"; setTimeout(function () { copyBtn.textContent = "Copy"; }, 1200); }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(lastText).then(done, function () {});
+    } else {
+      var ta = document.createElement("textarea"); ta.value = lastText; document.body.appendChild(ta);
+      ta.select(); try { document.execCommand("copy"); done(); } catch (e) {} document.body.removeChild(ta);
+    }
+  });
+}
+
+function mountRandom() {
+  var host = document.getElementById("random-host");
+  var root = host.attachShadow({ mode: "open" });
+  root.appendChild(document.getElementById("random-template").content.cloneNode(true));
+  initRandom(root);
+}
+mountRandom();
+
+showView("random");
 init();
-$("#new").focus();
 </script>
 </body>
 </html>
