@@ -208,11 +208,15 @@ input[type="number"] { width: 72px; }
 }
 
 /* Bottom tab bar */
+/* Floats on the page background: a soft fade instead of a solid strip, so there is no seam or gap */
 .tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
-  display: flex; gap: 8px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
-  background: #111a33; /* solid, so no page colour shows through */
-  border-top: 1px solid var(--line);
+  display: flex; gap: 8px; padding: 10px 16px 8px;
+  background: linear-gradient(to bottom, rgba(10, 12, 28, 0), rgba(10, 12, 28, 0.55));
+}
+/* Installed home-screen app: keep clear of the iPhone home indicator */
+@media (display-mode: standalone) {
+  .tabs { padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
 }
 
 .tab { flex: 1; min-height: 42px; padding: 10px 14px; font-weight: 600; }
