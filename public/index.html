@@ -211,6 +211,15 @@ input[type="number"] { width: 72px; }
 }
 
 /* Bottom tab bar */
+/* To Do screen: fades and rises in each time its tab is opened (the animation restarts when the screen is shown) */
+#view-todo:not([hidden]) { animation: todoIn 0.35s ease-out both; }
+@keyframes todoIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #view-todo:not([hidden]) { animation: none; }
+}
 /* Floats on the page background: a soft fade instead of a solid strip, so there is no seam or gap */
 .tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
