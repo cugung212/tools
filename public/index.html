@@ -215,10 +215,8 @@ input[type="number"] { width: 72px; }
   display: flex; gap: 8px; padding: 10px 16px 8px;
   background: linear-gradient(to bottom, rgba(10, 12, 28, 0), rgba(10, 12, 28, 0.55));
 }
-/* Installed home-screen app: keep clear of the iPhone home indicator */
-@media (display-mode: standalone) {
-  .tabs { padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
-}
+/* Home-screen app (no Safari toolbar): keep the buttons clear of the rounded corners and home indicator */
+.standalone .tabs { padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
 
 .tab { flex: 1; min-height: 42px; padding: 10px 14px; font-weight: 600; }
 .tab[aria-pressed="true"] {
@@ -438,6 +436,9 @@ input[type="number"]:focus { border-color: var(--accent); box-shadow: 0 0 0 4px 
 </nav>
 
 <script>
+if (window.navigator.standalone || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches)) {
+  document.documentElement.classList.add("standalone");
+}
 const API = "/api/todos";
 const KEY = "todo-app-v1";              // this device's cached copy
 const PENDING_KEY = "todo-app-pending"; // set while a change has not reached the server
