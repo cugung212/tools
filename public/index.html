@@ -328,7 +328,7 @@ h1 {
 .result .nums.many { font-size: 1.5rem; font-weight: 700; }
 .result .nums span { display: inline-block; }
 .result .nums.final span { animation: pop 0.28s cubic-bezier(0.2, 1.4, 0.4, 1) both; animation-delay: calc(var(--i, 0) * 12ms); }
-.result .nums.rolling { opacity: 0.7; filter: blur(0.6px); }
+.result .nums.rolling { color: rgba(232, 236, 244, 0.72); } /* dim by colour; blur/opacity draw edge lines on iPhone Safari */
 @keyframes pop { 0% { opacity: 0; transform: translateY(18px) scale(0.6); } 100% { opacity: 1; transform: none; } }
 .result .hint { color: var(--muted); text-align: center; font-size: 1.05rem; animation: breathe 2.6s ease-in-out infinite; }
 @keyframes breathe { 50% { opacity: 0.55; } }
