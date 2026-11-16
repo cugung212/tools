@@ -310,6 +310,7 @@ h1 {
 
 .result {
   position: relative; min-height: 176px; padding: 22px;
+  overflow: hidden; scrollbar-width: none; /* no scrollbar while numbers animate */
   display: flex; flex-direction: column; justify-content: center;
   background: var(--card); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow);
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
@@ -388,6 +389,7 @@ input[type="number"]:focus { border-color: var(--accent); box-shadow: 0 0 0 4px 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+.result::-webkit-scrollbar { display: none; }
 .result, .result * {
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
   cursor: default; caret-color: transparent;
