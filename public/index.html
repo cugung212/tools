@@ -123,8 +123,8 @@ input[type="number"] { width: 72px; }
 
 .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .item {
-  position: relative; display: flex; align-items: center; gap: 12px;
-  padding: 12px 12px 12px 6px;
+  position: relative; display: flex; flex-direction: column; gap: 6px;
+  padding: 12px 14px 8px;
   background: var(--card); border: 1px solid var(--line); border-radius: 16px;
   box-shadow: 0 2px 10px rgba(40, 40, 100, 0.06);
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
@@ -208,6 +208,9 @@ textarea.edit { display: block; resize: none; overflow: hidden; line-height: 1.3
 }
 .add-row .plus { width: 24px; text-align: center; font-size: 1.4rem; line-height: 1; }
 .add-row:hover, .add-row:focus-visible { color: var(--ink); }
+.item .edit { width: 100%; flex: none; }
+.bar { display: flex; align-items: center; gap: 8px; }
+.bar .spacer { flex: 1; }
 .empty {
   text-align: center; color: var(--muted); padding: 24px 16px;
   border: 1px dashed var(--line); border-radius: 16px; background: transparent;
@@ -250,11 +253,6 @@ textarea.edit { display: block; resize: none; overflow: hidden; line-height: 1.3
 <main>
   <h1>To do</h1>
   <div class="sub"><span id="count"></span><span id="sync"></span></div>
-
-  <form id="add-form" class="add" autocomplete="off">
-    <input id="new" type="text" placeholder="Add a to-do" aria-label="New to-do" maxlength="500">
-    <button class="primary" type="submit">Add</button>
-  </form>
 
   <div class="toolbar">
     <input id="pick-count" type="number" min="1" value="1" aria-label="How many to pick">
@@ -846,7 +844,7 @@ function addRow() {
     onkeydown: (e) => { if (e.key === "Enter") addBlank(); },
   },
     el("span", { class: "plus", "aria-hidden": "true" }, "+"),
-    el("span", {}, "List item"));
+    el("span", {}, "Add item"));
 }
 
 function togglePriority(id) {
@@ -864,14 +862,14 @@ function row(t) {
   if (!t.done && t.priority) classes.push("priority");
   if (picked.has(t.id)) classes.push("picked");
 
+  // One row of icons under the text: reorder, done, priority, then delete
   const cb = el("input", { type: "checkbox", "aria-label": "Mark as done", onchange: () => toggle(t.id) });
   cb.checked = t.done;
-  const parts = [];
-  if (!t.done) parts.push(handle(t));
-  parts.push(cb);
-
+  const bar = [];
+  if (!t.done) bar.push(handle(t));
+  bar.push(cb);
   if (!t.done) {
-    parts.push(el("button", {
+    bar.push(el("button", {
       class: "star", type: "button",
       "aria-pressed": t.priority ? "true" : "false",
       "aria-label": t.priority ? "Remove priority" : "Set as priority",
@@ -879,10 +877,13 @@ function row(t) {
       onclick: () => togglePriority(t.id),
     }, t.priority ? "★" : "☆"));
   }
+  bar.push(el("span", { class: "spacer" }));
+  bar.push(el("button", { class: "del", type: "button", "aria-label": "Delete to-do", onclick: () => remove(t.id) }, "×"));
 
+  let content;
   if (editingId === t.id) {
     let handled = false; // set when a key has already finished this edit
-    const input = el("textarea", {
+    content = el("textarea", {
       class: "edit", rows: 1, maxlength: 500, "aria-label": "Edit to-do",
       oninput: (e) => autosize(e.target),
       onkeydown: (e) => {
@@ -904,22 +905,20 @@ function row(t) {
     }, t.text);
     // Cursor goes to the end of the text. The text is NOT selected.
     setTimeout(() => {
-      input.focus();
-      const n = input.value.length;
-      input.setSelectionRange(n, n);
-      autosize(input);
+      content.focus();
+      const n = content.value.length;
+      content.setSelectionRange(n, n);
+      autosize(content);
     }, 0);
-    parts.push(input);
   } else {
-    parts.push(el("span", {
+    content = el("span", {
       class: "text", tabindex: 0, title: "Click to edit",
       onclick: () => { editingId = t.id; render(); },
       onkeydown: (e) => { if (e.key === "Enter") { editingId = t.id; render(); } },
-    }, t.text));
+    }, t.text);
   }
 
-  parts.push(el("button", { class: "del", type: "button", "aria-label": "Delete to-do", onclick: () => remove(t.id) }, "×"));
-  return el("li", { class: classes.join(" "), "data-id": t.id }, ...parts);
+  return el("li", { class: classes.join(" "), "data-id": t.id }, content, el("div", { class: "bar" }, ...bar));
 }
 
 function render() {
@@ -947,13 +946,6 @@ function render() {
   $("#redo").disabled = !redoStack.length;
 }
 
-$("#add-form").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const input = $("#new");
-  add(input.value);
-  input.value = "";
-  input.focus();
-});
 $("#pick").addEventListener("click", pickRandom);
 $("#undo").addEventListener("click", undo);
 $("#redo").addEventListener("click", redo);
