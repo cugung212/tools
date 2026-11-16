@@ -181,9 +181,11 @@ input[type="number"] { width: 72px; }
 .text {
   flex: 1; min-width: 0; overflow-wrap: anywhere; padding: 2px 0;
   cursor: text; border-radius: 6px; line-height: 1.35;
+  white-space: pre-wrap;
 }
 .item.done .text { color: var(--muted); text-decoration: line-through; }
 .edit { flex: 1; }
+textarea.edit { display: block; resize: none; overflow: hidden; line-height: 1.35; font-family: inherit; min-height: 46px; }
 
 .star {
   flex: none; padding: 2px 4px; font-size: 1.25rem; line-height: 1;
@@ -779,6 +781,12 @@ function commitDrag(d) {
   render();
 }
 
+// Grow a text area so all of its lines are visible
+function autosize(ta) {
+  ta.style.height = "auto";
+  ta.style.height = ta.scrollHeight + "px";
+}
+
 function newId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
@@ -874,15 +882,12 @@ function row(t) {
 
   if (editingId === t.id) {
     let handled = false; // set when a key has already finished this edit
-    const input = el("input", {
-      class: "edit", type: "text", value: t.text, maxlength: 500, "aria-label": "Edit to-do",
-      enterkeyhint: "next",
+    const input = el("textarea", {
+      class: "edit", rows: 1, maxlength: 500, "aria-label": "Edit to-do",
+      oninput: (e) => autosize(e.target),
       onkeydown: (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          handled = true;
-          commitEdit(t.id, e.target.value, true);
-        } else if (e.key === "Backspace" && e.target.value === "") {
+        // Enter adds a new line inside this to-do (default behavior of a text area)
+        if (e.key === "Backspace" && e.target.value === "") {
           e.preventDefault();
           handled = true;
           deleteAndEditPrevious(t.id);
@@ -896,9 +901,14 @@ function row(t) {
         if (handled || editingId !== t.id) return;
         commitEdit(t.id, e.target.value, false);
       },
-    });
+    }, t.text);
     // Cursor goes to the end of the text. The text is NOT selected.
-    setTimeout(() => { input.focus(); const n = input.value.length; input.setSelectionRange(n, n); }, 0);
+    setTimeout(() => {
+      input.focus();
+      const n = input.value.length;
+      input.setSelectionRange(n, n);
+      autosize(input);
+    }, 0);
     parts.push(input);
   } else {
     parts.push(el("span", {
