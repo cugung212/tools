@@ -7,19 +7,13 @@ self.addEventListener("push", (event) => {
 });
 
 async function showReminders() {
-  let items = [];
+  let data = { title: "Vehicle reminders", body: "" };
   try {
     const res = await fetch("/api/vehicles/due", { cache: "no-store" });
-    items = (await res.json()).items || [];
+    if (res.ok) data = await res.json();
   } catch (e) {}
-  const title = items.length
-    ? `${items.length} vehicle reminder${items.length === 1 ? "" : "s"}`
-    : "Vehicle reminders";
-  const body = items.length
-    ? items.slice(0, 5).map((i) => i.text).join("\n")
-    : "Open Tools to check your vehicles.";
-  await self.registration.showNotification(title, {
-    body,
+  await self.registration.showNotification(data.title, {
+    body: data.body,
     tag: "vehicle-reminders",
     icon: "/icon-192.png",
   });

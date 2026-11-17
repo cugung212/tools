@@ -46,3 +46,6 @@
 #vehicles-root .vform .primary { justify-self: stretch; }
 #vehicles-root .vdetails { margin-top: 18px; }
 #vehicles-root .vdelete { display: block; margin-top: 14px; }
+#vehicles-root .vsubrow .vsub { margin-bottom: 0; }
+#vehicles-root .vlang { display: flex; gap: 6px; flex-wrap: wrap; }
+#vehicles-root .vlang .vtab { padding: 6px 12px; font-size: 0.85rem; }
