@@ -3,7 +3,7 @@
 //   - KV namespace binding TODOS
 //   - Variables VAPID_PUBLIC_KEY and VAPID_SUBJECT
 //   - Secret VAPID_PRIVATE_JWK
-// Cron trigger runs daily at 03:00 UTC (10:00 in Vietnam).
+// Cron trigger runs every 15 minutes and sends the daily message at the reminder time set in the app.
 import { computeStatuses, notificationSummary } from "./reminders.js";
 import { LANGS } from "../public/i18n.js";
 
@@ -66,6 +66,23 @@ async function loadLang(env) {
   return LANGS.includes(raw) ? raw : "en";
 }
 
+const DEFAULT_TIME = "10:00";
+
+function validTime(s) {
+  return typeof s === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
+}
+
+async function loadReminderTime(env) {
+  const raw = await env.TODOS.get("reminderTime");
+  return validTime(raw) ? raw : DEFAULT_TIME;
+}
+
+// Current date and minutes since midnight in Vietnam
+function vietnamNow() {
+  const d = new Date(Date.now() + 7 * 3600 * 1000);
+  return { date: d.toISOString().slice(0, 10), minutes: d.getUTCHours() * 60 + d.getUTCMinutes() };
+}
+
 async function loadSubs(env) {
   const raw = await env.TODOS.get("push:subs");
   return raw ? JSON.parse(raw) : [];
@@ -92,7 +109,9 @@ async function handleTodos(request, env) {
 }
 
 async function handleVehicles(request, env) {
-  if (request.method === "GET") return json({ vehicles: await loadVehicles(env), lang: await loadLang(env) });
+  if (request.method === "GET") {
+    return json({ vehicles: await loadVehicles(env), lang: await loadLang(env), reminderTime: await loadReminderTime(env) });
+  }
   if (request.method === "PUT") {
     const text = await request.text();
     if (text.length > MAX_VEHICLE_BYTES) return json({ error: "too large" }, 413);
@@ -100,8 +119,10 @@ async function handleVehicles(request, env) {
     try { body = JSON.parse(text); } catch (e) { return json({ error: "invalid json" }, 400); }
     if (!validVehicles(body && body.vehicles)) return json({ error: "invalid vehicles" }, 400);
     if (body.lang !== undefined && !LANGS.includes(body.lang)) return json({ error: "invalid language" }, 400);
+    if (body.reminderTime !== undefined && !validTime(body.reminderTime)) return json({ error: "invalid time" }, 400);
     await env.TODOS.put("vehicles", JSON.stringify(body.vehicles));
     if (body.lang !== undefined) await env.TODOS.put("lang", body.lang);
+    if (body.reminderTime !== undefined) await env.TODOS.put("reminderTime", body.reminderTime);
     return json({ ok: true });
   }
   return json({ error: "method not allowed" }, 405);
@@ -166,9 +187,13 @@ async function pushEmpty(endpoint, env) {
 }
 
 async function sendDailyReminders(env) {
-  const summary = notificationSummary(await loadVehicles(env), todayVN(), await loadLang(env));
-  const items = summary.items;
-  if (!items.length) return;
+  const now = vietnamNow();
+  const [h, m] = (await loadReminderTime(env)).split(":").map(Number);
+  if (now.minutes < h * 60 + m) return; // not yet the reminder time
+  if ((await env.TODOS.get("lastSentDate")) === now.date) return; // already sent today
+  await env.TODOS.put("lastSentDate", now.date);
+  const summary = notificationSummary(await loadVehicles(env), now.date, await loadLang(env));
+  if (!summary.items.length) return;
   const subs = await loadSubs(env);
   const keep = [];
   for (const sub of subs) {
