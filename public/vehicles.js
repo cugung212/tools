@@ -15,6 +15,7 @@ let statuses = {};
 let pushState = "checking"; // checking | unsupported | needs-home | denied | off | on
 let view = { name: "garage", vehicleId: null, tab: "reminders", adding: false, editing: false };
 let note = "";
+let reminderTime = "10:00";
 let chain = Promise.resolve();
 
 const T = (key, params) => t(lang, key, params);
@@ -113,7 +114,7 @@ function persist() {
     .then(() => fetch("/api/vehicles", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vehicles, lang }),
+      body: JSON.stringify({ vehicles, lang, reminderTime }),
     }))
     .then((res) => {
       if (!res.ok) throw new Error("HTTP " + res.status);
@@ -135,6 +136,7 @@ async function load() {
     if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     if (LANGS.includes(data.lang)) lang = data.lang;
+    if (typeof data.reminderTime === "string") reminderTime = data.reminderTime;
     if ((data.vehicles || []).length) {
       vehicles = data.vehicles;
     } else {
@@ -236,10 +238,24 @@ function enablePush() {
 }
 
 function pushCard() {
-  const children = [el("h2", {}, T("notifications")), el("p", { class: "vmuted" }, T("push_" + pushState))];
+  const children = [
+    el("h2", {}, T("notifications")),
+    el("p", { class: "vmuted" }, T("push_" + pushState, { time: reminderTime })),
+  ];
   if (pushState === "off") {
     children.push(el("button", { class: "primary", type: "button", onclick: enablePush }, T("turn_on")));
   }
+  const time = el("input", { class: "vinput", type: "time", "aria-label": T("reminder_time") });
+  time.value = reminderTime;
+  time.addEventListener("change", () => {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time.value)) return;
+    reminderTime = time.value;
+    persist();
+    render();
+  });
+  children.push(
+    el("label", { class: "vfield" }, el("span", {}, T("reminder_time")), time),
+    el("p", { class: "vmuted" }, T("reminder_time_hint")));
   return el("div", { class: "vcard" }, children);
 }
 
@@ -335,6 +351,7 @@ function garageView() {
       languageSwitch()),
     note ? el("p", { class: "vnote" }, note) : null,
     pushCard(),
+    el("button", { class: "vadd", type: "button", onclick: openReport }, T("report_open")),
     vehicles.map((v) => el("button", {
       class: "vcard vcar", type: "button",
       onclick: () => openVehicle(v.id),
@@ -591,11 +608,63 @@ function vehicleDetailsBlock(v) {
     }, T("delete_vehicle")));
 }
 
+// ---- Report: everything due soon or overdue ----
+
+function openReport() {
+  view = { name: "report", vehicleId: null, tab: "reminders", adding: false, editing: false };
+  note = "";
+  render();
+  window.scrollTo(0, 0);
+}
+
+function reportRows() {
+  const rows = [];
+  for (const v of vehicles) {
+    const ev = statusOf(v);
+    for (const r of ev.reminders) {
+      if (r.status === "overdue" || r.status === "soon") {
+        rows.push({ vehicle: v, title: r.name, status: r.status, text: r.text, kind: "reminder" });
+      }
+    }
+    for (const d of ev.documents) {
+      if (d.latest && (d.status === "overdue" || d.status === "soon")) {
+        rows.push({ vehicle: v, title: docLabel(d.type), status: d.status, text: d.text, kind: "document" });
+      }
+    }
+  }
+  rows.sort((a, b) => (a.status === b.status ? 0 : a.status === "overdue" ? -1 : 1));
+  return rows;
+}
+
+function reportView() {
+  const rows = reportRows();
+  const overdue = rows.filter((r) => r.status === "overdue").length;
+  const soon = rows.length - overdue;
+  const groups = vehicles
+    .map((v) => ({ v, items: rows.filter((r) => r.vehicle.id === v.id) }))
+    .filter((g) => g.items.length);
+  return el("div", {},
+    el("button", { class: "vback", type: "button", onclick: goGarage }, T("back")),
+    el("h1", {}, T("report_title")),
+    el("p", { class: "vsub" }, T("report_asof", { date: todayVN() })),
+    el("div", { class: "vrow vsubrow" },
+      el("span", { class: "vchip vchip-overdue" }, T("report_overdue", { n: overdue })),
+      el("span", { class: "vchip vchip-soon" }, T("report_soon", { n: soon }))),
+    groups.length
+      ? groups.map((g) => el("div", {},
+          el("h2", {}, g.v.name + " · " + fmtKm(currentKm(g.v))),
+          g.items.map((r) => item(r.title, chip(r.status), [
+            r.text,
+            T(r.kind === "reminder" ? "report_kind_reminder" : "report_kind_document"),
+          ], []))))
+      : el("p", { class: "vmuted" }, T("report_none")));
+}
+
 function render() {
   if (view.name === "detail" && !vehicles.some((x) => x.id === view.vehicleId)) {
     view = { name: "garage", vehicleId: null, tab: "reminders", adding: false, editing: false };
   }
-  root.replaceChildren(view.name === "detail" ? detailView() : garageView());
+  root.replaceChildren(view.name === "detail" ? detailView() : view.name === "report" ? reportView() : garageView());
   updateTabLabel();
 }
 
