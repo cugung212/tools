@@ -351,7 +351,8 @@ function garageView() {
       languageSwitch()),
     note ? el("p", { class: "vnote" }, note) : null,
     pushCard(),
-    el("button", { class: "vadd", type: "button", onclick: openReport }, T("report_open")),
+    el("div", { class: "vreport-row" },
+      el("button", { class: "vreport", type: "button", onclick: openReport }, reportIcon(), T("report_open"))),
     vehicles.map((v) => el("button", {
       class: "vcard vcar", type: "button",
       onclick: () => openVehicle(v.id),
@@ -606,6 +607,12 @@ function vehicleDetailsBlock(v) {
         persist();
       },
     }, T("delete_vehicle")));
+}
+
+function reportIcon() {
+  const span = document.createElement("span");
+  span.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>';
+  return span;
 }
 
 // ---- Report: everything due soon or overdue ----

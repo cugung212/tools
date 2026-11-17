@@ -49,3 +49,26 @@
 #vehicles-root .vsubrow .vsub { margin-bottom: 0; }
 #vehicles-root .vlang { display: flex; gap: 6px; flex-wrap: wrap; }
 #vehicles-root .vlang .vtab { padding: 6px 12px; font-size: 0.85rem; }
+
+/* Reminder time field stays inside its card */
+#vehicles-root .vcard { min-width: 0; }
+#vehicles-root .vfield { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+#vehicles-root input[type="time"].vinput {
+  -webkit-appearance: none; appearance: none; min-width: 0; width: 100%; max-width: 100%;
+  height: 46px; text-align: left;
+}
+
+/* Back button and screen title on separate lines */
+#vehicles-root .vback { display: inline-block; margin: 0 0 14px; }
+#vehicles-root h1 { display: block; width: fit-content; margin: 0 0 6px; }
+
+/* Report button, right aligned, with a chart icon */
+#vehicles-root .vreport-row { display: flex; justify-content: flex-end; margin: 4px 0 14px; }
+#vehicles-root .vreport {
+  display: inline-flex; align-items: center; gap: 8px; padding: 9px 18px;
+  font-size: 0.95rem; font-weight: 600; border: 1px solid transparent;
+  background:
+    linear-gradient(var(--card-strong), var(--card-strong)) padding-box,
+    linear-gradient(135deg, var(--accent), var(--accent-2)) border-box;
+}
+#vehicles-root .vreport svg { width: 18px; height: 18px; flex: none; }
