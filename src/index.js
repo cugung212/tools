@@ -4,7 +4,8 @@
 //   - Variables VAPID_PUBLIC_KEY and VAPID_SUBJECT
 //   - Secret VAPID_PRIVATE_JWK
 // Cron trigger runs daily at 03:00 UTC (10:00 in Vietnam).
-import { computeStatuses, dueItems } from "./reminders.js";
+import { computeStatuses, notificationSummary } from "./reminders.js";
+import { LANGS } from "../public/i18n.js";
 
 const MAX_BYTES = 1024 * 1024;
 const MAX_VEHICLE_BYTES = 2 * 1024 * 1024;
@@ -60,6 +61,11 @@ async function loadVehicles(env) {
   return raw ? JSON.parse(raw) : [];
 }
 
+async function loadLang(env) {
+  const raw = await env.TODOS.get("lang");
+  return LANGS.includes(raw) ? raw : "en";
+}
+
 async function loadSubs(env) {
   const raw = await env.TODOS.get("push:subs");
   return raw ? JSON.parse(raw) : [];
@@ -86,14 +92,16 @@ async function handleTodos(request, env) {
 }
 
 async function handleVehicles(request, env) {
-  if (request.method === "GET") return json({ vehicles: await loadVehicles(env) });
+  if (request.method === "GET") return json({ vehicles: await loadVehicles(env), lang: await loadLang(env) });
   if (request.method === "PUT") {
     const text = await request.text();
     if (text.length > MAX_VEHICLE_BYTES) return json({ error: "too large" }, 413);
     let body;
     try { body = JSON.parse(text); } catch (e) { return json({ error: "invalid json" }, 400); }
     if (!validVehicles(body && body.vehicles)) return json({ error: "invalid vehicles" }, 400);
+    if (body.lang !== undefined && !LANGS.includes(body.lang)) return json({ error: "invalid language" }, 400);
     await env.TODOS.put("vehicles", JSON.stringify(body.vehicles));
+    if (body.lang !== undefined) await env.TODOS.put("lang", body.lang);
     return json({ ok: true });
   }
   return json({ error: "method not allowed" }, 405);
@@ -158,7 +166,8 @@ async function pushEmpty(endpoint, env) {
 }
 
 async function sendDailyReminders(env) {
-  const items = dueItems(await loadVehicles(env), todayVN());
+  const summary = notificationSummary(await loadVehicles(env), todayVN(), await loadLang(env));
+  const items = summary.items;
   if (!items.length) return;
   const subs = await loadSubs(env);
   const keep = [];
@@ -175,10 +184,10 @@ export default {
     if (url.pathname === "/api/todos") return handleTodos(request, env);
     if (url.pathname === "/api/vehicles") return handleVehicles(request, env);
     if (url.pathname === "/api/vehicles/status" && request.method === "GET") {
-      return json({ statuses: computeStatuses(await loadVehicles(env), todayVN()) });
+      return json({ statuses: computeStatuses(await loadVehicles(env), todayVN(), await loadLang(env)) });
     }
     if (url.pathname === "/api/vehicles/due" && request.method === "GET") {
-      return json({ items: dueItems(await loadVehicles(env), todayVN()) });
+      return json(notificationSummary(await loadVehicles(env), todayVN(), await loadLang(env)));
     }
     if (url.pathname === "/api/push/key" && request.method === "GET") {
       return json({ key: env.VAPID_PUBLIC_KEY || "" });
