@@ -13,3 +13,9 @@ run_worker_first = ["/api/*"]
 binding = "TODOS"
 id = "a2bf1750d3de4f2c924ca15a15e70c35"
 
+[vars]
+VAPID_PUBLIC_KEY = "BOMz7u9RU7hXlXh4kt-8rnTJp_VONRThYuObtP5L9riar5PJNUMn3MsT8UUCjCzuJ70dw4e6U0kCHzTsRkD8j2I"
+VAPID_SUBJECT = "mailto:cugung212@gmail.com"
+
+[triggers]
+crons = ["0 3 * * *"]
