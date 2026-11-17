@@ -21,6 +21,9 @@ let chain = Promise.resolve();
 let importText = "";
 let importPreview = null;
 let drag = null;
+let searches = {};
+let lastNav = "";
+let lastDepth = 0;
 
 function freshView(name) {
   return { name, vehicleId: null, partId: null, tab: "parts", adding: false, editing: false, importing: false };
@@ -395,13 +398,7 @@ function garageView() {
     pushCard(),
     el("div", { class: "vreport-row" },
       el("button", { class: "vreport", type: "button", onclick: openReport }, reportIcon(), T("report_open"))),
-    vehicles.map((v) => el("button", {
-      class: "vcard vcar", type: "button",
-      onclick: () => goDetail(v.id, "parts"),
-    },
-      el("div", { class: "vrow" }, el("strong", {}, v.name), chip(vehicleStatus(v))),
-      el("div", { class: "vmuted" }, [v.make, v.model, v.year, v.plate].filter(Boolean).join(" · ")),
-      el("div", { class: "vmuted" }, fmtKm(currentKm(v))))),
+    searchable("garage", vehicles, vehicleText, (shown) => shown.map((v) => vehicleCard(v)), { emptyKey: "nothing_here" }),
     addBlock(T("add_vehicle"), vehicleFields(null), T("save_vehicle"), addVehicle));
 }
 
@@ -540,13 +537,13 @@ function starBtn(p) {
   }, p.priority ? "★" : "☆");
 }
 
-function partRow(v, p) {
+function partRow(v, p, canDrag) {
   const st = statusOf(v).parts.find((x) => x.id === p.id) || { status: "unknown", text: T("no_record") };
   const last = lastEntry(p);
   return el("li", { class: "vpart" + (p.priority ? " priority" : ""), "data-pid": p.id },
     el("div", { class: "vrow" },
       el("span", { class: "vleft" },
-        handle(p.id),
+        canDrag ? handle(p.id) : null,
         starBtn(p),
         el("button", { class: "vlink", type: "button", onclick: () => openPart(p.id) }, p.name)),
       chip(st.status)),
@@ -570,7 +567,11 @@ function partsTab(v) {
     list.length
       ? el("p", { class: "vmuted" }, T("reorder_hint"))
       : el("p", { class: "vmuted" }, T("no_parts_yet")),
-    list.length ? el("ul", { class: "vlist" }, list.map((p) => partRow(v, p))) : null,
+    list.length
+      ? searchable(searchKey("parts"), list, partText,
+          (shown, unfiltered) => shown.map((p) => partRow(v, p, unfiltered)),
+          { tag: "ul", cls: "vlist", emptyKey: "nothing_here" })
+      : null,
     importBtn,
     add);
 }
@@ -610,11 +611,8 @@ function partDetailView(v, p) {
     view.editing ? form(partFields(p), T("save_part"), (vals) => updatePart(p, vals)) : null,
     el("h2", {}, T("part_history")),
     entries.length
-      ? entries.map((h) => item(
-          actionLabel(h.action) + " · " + h.date,
-          null,
-          [fmtKm(h.km), h.cost !== "" && h.cost != null && toNum(h.cost) ? fmtMoney(h.cost) : "", h.shop, h.notes],
-          [delBtn(() => { p.history = p.history.filter((x) => x.id !== h.id); render(); persist(); })]))
+      ? searchable(searchKey("history"), entries, historyText,
+          (shown) => shown.map((h) => historyItem(v, p, h)), { emptyKey: "part_no_history" })
       : el("p", { class: "vmuted" }, T("part_no_history")),
     shops.length
       ? el("div", {},
@@ -925,19 +923,10 @@ function deleteVisit(v, id) {
 }
 
 function visitsTab(v) {
-  const list = [...v.services].sort((a, b) => (a.date < b.date ? 1 : -1)).map((s) => item(
-    s.type || "—",
-    s.cost ? el("span", { class: "vmuted" }, fmtMoney(s.cost)) : null,
-    [
-      s.date,
-      actionLabel(s.action),
-      fmtKm(s.km),
-      (s.parts || []).map((pid) => (v.parts.find((x) => x.id === pid) || {}).name).filter(Boolean).join(", "),
-      s.notes,
-    ],
-    [delBtn(() => deleteVisit(v, s.id))]));
+  const sorted = [...v.services].sort((a, b) => (a.date < b.date ? 1 : -1));
   return el("div", {},
-    list,
+    searchable(searchKey("services"), sorted, (s) => visitText(v, s),
+      (shown) => shown.map((s) => visitItem(v, s)), { emptyKey: "nothing_here" }),
     addBlock(T("add_service"), visitFields(v), T("save_service"), (vals) => addVisit(v, vals)));
 }
 
@@ -991,25 +980,9 @@ function addReminder(v, vals) {
 
 function remindersTab(v) {
   const ev = statusOf(v).reminders;
-  const list = v.reminders.map((r) => {
-    const st = ev.find((x) => x.id === r.id) || { status: "unknown", text: T("no_record") };
-    const every = r.mode === "km" ? T("every_km", { n: fmtNum(r.intervalKm) }) : T("every_months", { n: r.intervalMonths });
-    const actions = [];
-    if (!r.link) {
-      actions.push(el("button", {
-        type: "button",
-        onclick: () => { r.lastDate = todayVN(); r.lastKm = currentKm(v); render(); persist(); },
-      }, T("done_today")));
-    }
-    actions.push(delBtn(() => { v.reminders = v.reminders.filter((x) => x.id !== r.id); persist(); }));
-    return item(r.name, chip(st.status), [
-      st.text,
-      every,
-      r.link ? T("link_follows", { x: linkLabel(v, r.link) }) : "",
-    ], actions);
-  });
   return el("div", {},
-    list,
+    searchable(searchKey("reminders"), v.reminders, (r) => [r.name, linkLabel(v, r.link)].join(" "),
+      (shown) => shown.map((r) => reminderItem(v, r, ev)), { emptyKey: "nothing_here" }),
     addBlock(T("add_reminder"), reminderFields(v), T("save_reminder"), (vals) => addReminder(v, vals)));
 }
 
@@ -1023,15 +996,6 @@ function fuelTab(v) {
     const litres = Number(sorted[i].liters);
     if (diff > 0 && litres > 0) cons[sorted[i].id] = (litres / diff) * 100;
   }
-  const list = [...sorted].reverse().map((f) => item(
-    f.date + " · " + fmtKm(f.km),
-    null,
-    [
-      fmtNum(f.liters) + " L · " + fmtMoney(f.cost) + " · " + fuelLabel(f.fuelType) +
-        (cons[f.id] ? " · " + fmtNum(cons[f.id].toFixed(1)) + " L/100 km" : ""),
-      f.note,
-    ],
-    [delBtn(() => { v.fuel = v.fuel.filter((x) => x.id !== f.id); persist(); })]));
   const add = addBlock(T("add_fuel"), [
     { name: "date", label: T("f_date"), type: "date", value: todayVN() },
     { name: "km", label: T("f_km"), type: "number", inputmode: "numeric" },
@@ -1048,7 +1012,11 @@ function fuelTab(v) {
     persist();
     return "";
   });
-  return el("div", {}, el("p", { class: "vmuted" }, T("consumption_note")), list, add);
+  return el("div", {},
+    el("p", { class: "vmuted" }, T("consumption_note")),
+    searchable(searchKey("fuel"), [...sorted].reverse(), (f) => [f.date, f.km, f.fuelType, f.note].join(" "),
+      (shown) => shown.map((f) => fuelItem(v, f, cons)), { emptyKey: "nothing_here" }),
+    add);
 }
 
 // ---- Expenses ----
@@ -1064,11 +1032,7 @@ function expensesTab(v) {
     if (e.date.startsWith(year)) yearTotal += amount;
     if (e.date.startsWith(month)) monthTotal += amount;
   }
-  const list = [...v.expenses].sort((a, b) => (a.date < b.date ? 1 : -1)).map((e) => item(
-    catLabel(e.category),
-    el("span", { class: "vmuted" }, fmtMoney(e.amount)),
-    [e.date, e.note],
-    [delBtn(() => { v.expenses = v.expenses.filter((x) => x.id !== e.id); persist(); })]));
+  const sorted = [...v.expenses].sort((a, b) => (a.date < b.date ? 1 : -1));
   const add = addBlock(T("add_expense"), [
     { name: "date", label: T("f_date"), type: "date", value: today },
     { name: "category", label: T("f_category"), options: EXP_CATS.map((c) => ({ value: c, label: catLabel(c) })) },
@@ -1083,21 +1047,15 @@ function expensesTab(v) {
   });
   return el("div", {},
     el("p", { class: "vmuted" }, T("this_month", { m: fmtMoney(monthTotal), y: fmtMoney(yearTotal) })),
-    list, add);
+    searchable(searchKey("expenses"), sorted, (e) => [e.date, catLabel(e.category), e.note, e.amount].join(" "),
+      (shown) => shown.map((e) => expenseItem(v, e)), { emptyKey: "nothing_here" }),
+    add);
 }
 
 // ---- Documents ----
 
 function documentsTab(v) {
   const ev = statusOf(v).documents;
-  const list = v.documents.map((d) => {
-    const st = ev.find((x) => x.id === d.id) || { status: "unknown", text: "", latest: false };
-    return item(
-      docLabel(d.type),
-      chip(st.latest ? st.status : "unknown", st.latest ? null : T("status_older")),
-      [T("issued_line", { issued: d.issued || T("dash"), expires: d.expires || T("dash") }), st.latest ? st.text : ""],
-      [delBtn(() => { v.documents = v.documents.filter((x) => x.id !== d.id); persist(); })]);
-  });
   const add = addBlock(T("add_document"), [
     { name: "type", label: T("f_document"), options: DOC_TYPES.map((x) => ({ value: x, label: docLabel(x) })) },
     { name: "issued", label: T("f_issued_date"), type: "date" },
@@ -1109,7 +1067,10 @@ function documentsTab(v) {
     persist();
     return "";
   });
-  return el("div", {}, list, add);
+  return el("div", {},
+    searchable(searchKey("documents"), v.documents, (d) => [d.type, docLabel(d.type), d.issued, d.expires, d.note].join(" "),
+      (shown) => shown.map((d) => documentItem(v, d, ev)), { emptyKey: "nothing_here" }),
+    add);
 }
 
 // ---- Vehicle details ----
@@ -1173,10 +1134,6 @@ function reportView() {
   const rows = reportRows();
   const overdue = rows.filter((r) => r.status === "overdue").length;
   const soon = rows.length - overdue;
-  const kindKey = { part: "report_kind_part", reminder: "report_kind_reminder", document: "report_kind_document" };
-  const groups = vehicles
-    .map((v) => ({ v, items: rows.filter((r) => r.vehicle.id === v.id) }))
-    .filter((g) => g.items.length);
   return el("div", {},
     el("button", { class: "vback", type: "button", onclick: goGarage }, T("back")),
     el("h1", {}, T("report_title")),
@@ -1184,11 +1141,123 @@ function reportView() {
     el("div", { class: "vrow vsubrow" },
       el("span", { class: "vchip vchip-overdue" }, T("report_overdue", { n: overdue })),
       el("span", { class: "vchip vchip-soon" }, T("report_soon", { n: soon }))),
-    groups.length
-      ? groups.map((g) => el("div", {},
-          el("h2", {}, g.v.name + " · " + fmtKm(currentKm(g.v))),
-          g.items.map((r) => item(r.title, chip(r.status), [r.text, T(kindKey[r.kind])], []))))
-      : el("p", { class: "vmuted" }, T("report_none")));
+    searchable("report", rows, (r) => [r.title, r.text, r.vehicle.name].join(" "),
+      (shown) => reportGroups(shown), { emptyKey: "report_none" }));
+}
+
+// ---- Search ----
+
+function searchKey(part) {
+  return [view.name, view.vehicleId || "", view.tab, part || ""].join("|");
+}
+
+// A search box above a list. Typing filters the list in place, so the box keeps focus.
+function searchable(key, items, toText, build, opts = {}) {
+  const input = el("input", {
+    class: "vinput vsearch", type: "search",
+    placeholder: T("search_placeholder"), "aria-label": T("search_placeholder"),
+  });
+  input.value = searches[key] || "";
+  const tag = opts.tag || "div";
+  const box = el(tag, { class: opts.cls || "vsearch-box" });
+  const fill = () => {
+    const q = (searches[key] || "").trim().toLowerCase();
+    const shown = q ? items.filter((x) => String(toText(x)).toLowerCase().includes(q)) : items;
+    const nodes = shown.length ? build(shown, !q) : [];
+    if (!nodes.length) {
+      nodes.push(el(tag === "ul" ? "li" : "p", { class: "vmuted" },
+        q ? T("search_none") : T(opts.emptyKey || "nothing_here")));
+    }
+    box.replaceChildren(...nodes);
+  };
+  input.addEventListener("input", () => {
+    searches[key] = input.value;
+    fill();
+  });
+  fill();
+  return el("div", { class: "vsearchable" }, input, box);
+}
+
+const vehicleText = (v) => [v.name, v.make, v.model, v.plate, v.year].join(" ");
+const partText = (p) => [p.name, p.description, p.oem, p.brand, p.lifeText, actionLabel(p.defaultAction)].join(" ");
+const historyText = (h) => [h.date, actionLabel(h.action), h.shop, h.notes, h.km, h.cost].join(" ");
+const partNameById = (v, pid) => (v.parts.find((x) => x.id === pid) || {}).name || "";
+const visitText = (v, s) => [s.type, s.date, s.notes, actionLabel(s.action), (s.parts || []).map((pid) => partNameById(v, pid)).join(" ")].join(" ");
+
+function vehicleCard(v) {
+  return el("button", { class: "vcard vcar", type: "button", onclick: () => goDetail(v.id, "parts") },
+    el("div", { class: "vrow" }, el("strong", {}, v.name), chip(vehicleStatus(v))),
+    el("div", { class: "vmuted" }, [v.make, v.model, v.year, v.plate].filter(Boolean).join(" · ")),
+    el("div", { class: "vmuted" }, fmtKm(currentKm(v))));
+}
+
+function visitItem(v, s) {
+  return item(
+    s.type || "—",
+    s.cost ? el("span", { class: "vmuted" }, fmtMoney(s.cost)) : null,
+    [s.date, actionLabel(s.action), fmtKm(s.km), (s.parts || []).map((pid) => partNameById(v, pid)).filter(Boolean).join(", "), s.notes],
+    [delBtn(() => deleteVisit(v, s.id))]);
+}
+
+function historyItem(v, p, h) {
+  return item(
+    actionLabel(h.action) + " · " + h.date,
+    null,
+    [fmtKm(h.km), h.cost !== "" && h.cost != null && toNum(h.cost) ? fmtMoney(h.cost) : "", h.shop, h.notes],
+    [delBtn(() => { p.history = p.history.filter((x) => x.id !== h.id); render(); persist(); })]);
+}
+
+function reminderItem(v, r, ev) {
+  const st = ev.find((x) => x.id === r.id) || { status: "unknown", text: T("no_record") };
+  const every = r.mode === "km" ? T("every_km", { n: fmtNum(r.intervalKm) }) : T("every_months", { n: r.intervalMonths });
+  const actions = [];
+  if (!r.link) {
+    actions.push(el("button", {
+      type: "button",
+      onclick: () => { r.lastDate = todayVN(); r.lastKm = currentKm(v); render(); persist(); },
+    }, T("done_today")));
+  }
+  actions.push(delBtn(() => { v.reminders = v.reminders.filter((x) => x.id !== r.id); persist(); }));
+  return item(r.name, chip(st.status), [st.text, every, r.link ? T("link_follows", { x: linkLabel(v, r.link) }) : ""], actions);
+}
+
+function fuelItem(v, f, cons) {
+  return item(
+    f.date + " · " + fmtKm(f.km),
+    null,
+    [
+      fmtNum(f.liters) + " L · " + fmtMoney(f.cost) + " · " + fuelLabel(f.fuelType) +
+        (cons[f.id] ? " · " + fmtNum(cons[f.id].toFixed(1)) + " L/100 km" : ""),
+      f.note,
+    ],
+    [delBtn(() => { v.fuel = v.fuel.filter((x) => x.id !== f.id); persist(); })]);
+}
+
+function expenseItem(v, e) {
+  return item(
+    catLabel(e.category),
+    el("span", { class: "vmuted" }, fmtMoney(e.amount)),
+    [e.date, e.note],
+    [delBtn(() => { v.expenses = v.expenses.filter((x) => x.id !== e.id); persist(); })]);
+}
+
+function documentItem(v, d, ev) {
+  const st = ev.find((x) => x.id === d.id) || { status: "unknown", text: "", latest: false };
+  return item(
+    docLabel(d.type),
+    chip(st.latest ? st.status : "unknown", st.latest ? null : T("status_older")),
+    [T("issued_line", { issued: d.issued || T("dash"), expires: d.expires || T("dash") }), st.latest ? st.text : ""],
+    [delBtn(() => { v.documents = v.documents.filter((x) => x.id !== d.id); persist(); })]);
+}
+
+function reportGroups(rows) {
+  const kindKey = { part: "report_kind_part", reminder: "report_kind_reminder", document: "report_kind_document" };
+  return vehicles
+    .map((v) => ({ v, items: rows.filter((r) => r.vehicle.id === v.id) }))
+    .filter((g) => g.items.length)
+    .map((g) => el("div", {},
+      el("h2", {}, g.v.name + " · " + fmtKm(currentKm(g.v))),
+      g.items.map((r) => item(r.title, chip(r.status), [r.text, T(kindKey[r.kind])], []))));
 }
 
 // ---- Rendering ----
@@ -1209,6 +1278,15 @@ function render() {
     content = reportView();
   } else {
     content = garageView();
+  }
+  // Slide when moving between screens. Changing tabs or refreshing data does not replay the slide.
+  const nav = [view.name, view.vehicleId || "", view.partId || ""].join("|");
+  if (nav !== lastNav) {
+    const depth = view.name === "garage" ? 0 : view.name === "part" ? 2 : 1;
+    const dir = depth > lastDepth ? "forward" : depth < lastDepth ? "back" : "fade";
+    content.classList.add("vscreen-" + dir);
+    lastNav = nav;
+    lastDepth = depth;
   }
   root.replaceChildren(content);
   updateTabLabel();

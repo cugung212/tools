@@ -103,3 +103,21 @@
 #vehicles-root .vcheck { display: flex; align-items: center; gap: 8px; font-size: 0.95rem; color: var(--ink); }
 #vehicles-root .vcheck input { width: 18px; height: 18px; accent-color: var(--accent); }
 #vehicles-root textarea.vinput { min-height: 170px; resize: vertical; font-family: ui-monospace, Menlo, monospace; font-size: 14px; }
+
+/* Search */
+#vehicles-root .vsearchable { margin: 4px 0 12px; }
+#vehicles-root .vsearch { -webkit-appearance: none; appearance: none; font-size: 16px; }
+#vehicles-root .vsearch::-webkit-search-cancel-button { filter: invert(0.7); }
+
+/* Screen animations */
+@keyframes vTabIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes vForward { from { opacity: 0; transform: translateX(32px); } to { opacity: 1; transform: none; } }
+@keyframes vBack { from { opacity: 0; transform: translateX(-32px); } to { opacity: 1; transform: none; } }
+@keyframes vFade { from { opacity: 0; } to { opacity: 1; } }
+#view-vehicles:not([hidden]) { animation: vTabIn 0.35s ease-out both; }
+#vehicles-root .vscreen-forward { animation: vForward 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+#vehicles-root .vscreen-back { animation: vBack 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+#vehicles-root .vscreen-fade { animation: vFade 0.25s ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  #view-vehicles, #vehicles-root .vscreen-forward, #vehicles-root .vscreen-back, #vehicles-root .vscreen-fade { animation: none; }
+}
