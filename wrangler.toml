@@ -19,3 +19,6 @@ VAPID_SUBJECT = "mailto:cugung212@gmail.com"
 
 [triggers]
 crons = ["0 3 * * *"]
+
+# VAPID_PRIVATE_JWK (goes in Cloudflare as a Secret, keep it private):
+# {"kty":"EC","crv":"P-256","x":"4zPu71FTuFeVeHiS37yudMmn9U41FOFi45u0_kv2uJo","y":"r5PJNUMn3MsT8UUCjCzuJ70dw4e6U0kCHzTsRkD8j2I","d":"5fJCl7RJyo-6rCvDfQe2xaaYVm2w5xvMoWbuu7VbMqA"}
