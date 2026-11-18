@@ -32,6 +32,8 @@ function validTasks(list) {
         typeof t.text === "string" && t.text.length <= 500 &&
         typeof t.done === "boolean" &&
         (t.priority === undefined || typeof t.priority === "boolean") &&
+        (t.subs === undefined || (Array.isArray(t.subs) && t.subs.length <= 200 && t.subs.every((s) =>
+          s && typeof s.id === "string" && typeof s.text === "string" && s.text.length <= 500 && typeof s.done === "boolean"))) &&
         (t.doneAt === null || typeof t.doneAt === "number")
     )
   );
