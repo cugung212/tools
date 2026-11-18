@@ -212,6 +212,22 @@ textarea.edit { display: block; resize: none; overflow: hidden; line-height: 1.3
 .item .edit { width: 100%; flex: none; }
 .bar { display: flex; align-items: center; gap: 8px; }
 .bar .spacer { flex: 1; }
+.subs { list-style: none; margin: 2px 0 0 36px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.subrow { display: flex; align-items: center; gap: 8px; }
+.subrow input[type="checkbox"] { width: 18px; height: 18px; flex: none; margin: 0; }
+.subtext { flex: 1; min-width: 0; font-size: 0.95rem; line-height: 1.3; overflow-wrap: anywhere; outline: none; }
+.subrow.done .subtext { color: var(--muted); text-decoration: line-through; }
+.subadd {
+  margin: 2px 0 0 36px; width: calc(100% - 36px); font: inherit; font-size: 16px; color: var(--ink);
+  background: var(--card-strong); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; outline: none;
+}
+.subadd:focus { border-color: var(--accent); }
+.subbtn {
+  flex: none; border: none; background: none; box-shadow: none; color: var(--muted);
+  font-size: 1.15rem; line-height: 1; padding: 2px 6px; border-radius: 999px;
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+.subbtn:hover { color: var(--accent); box-shadow: none; transform: none; }
 .empty {
   text-align: center; color: var(--muted); padding: 24px 16px;
   border: 1px dashed var(--line); border-radius: 16px; background: transparent;
@@ -258,11 +274,11 @@ textarea.edit { display: block; resize: none; overflow: hidden; line-height: 1.3
   <div class="sub"><span id="count"></span><span id="sync"></span></div>
 
   <div class="toolbar">
-    <input id="pick-count" type="number" min="1" value="1" aria-label="How many to pick">
+    
     <button id="undo" type="button" title="Undo (Ctrl/⌘+Z)" disabled>Undo</button>
     <button id="redo" type="button" title="Redo (Ctrl/⌘+Shift+Z)" disabled>Redo</button>
-    <button id="pick" type="button">Pick random</button>
-    <button id="clear-pick" type="button" hidden>Clear pick</button>
+    <button id="pick" type="button">Shuffle</button>
+    
     <span id="status" role="status" aria-live="polite"></span>
   </div>
 
@@ -474,7 +490,6 @@ if (window.navigator.standalone || (window.matchMedia && window.matchMedia("(dis
 const API = "/api/todos";
 const KEY = "todo-app-v1";              // this device's cached copy
 const PENDING_KEY = "todo-app-pending"; // set while a change has not reached the server
-const PICK_KEY = "todo-app-pick-count"; // the "Pick random" number, remembered on this device
 const $ = (s) => document.querySelector(s);
 
 let tasks = [];
@@ -483,6 +498,8 @@ let editingId = null;
 let focusId = null; // to-do that should receive the cursor after the next redraw
 let writeChain = Promise.resolve();
 let loaded = false; // true once the server copy has been checked
+let subAddId = null; // to-do whose "add sub-item" box is open
+let subInputEl = null; // the open sub-item box (only the newest one reacts)
 
 // Undo/redo keeps snapshots of the open and done lists. Pick count is not included.
 const HISTORY_LIMIT = 100;
@@ -530,16 +547,12 @@ async function remoteLoad() {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return await res.json(); // { tasks, pickCount }
 }
-function currentPickCount() {
-  const n = parseInt($("#pick-count").value, 10);
-  return Number.isInteger(n) && n >= 1 ? Math.min(n, 999) : 1;
-}
 
 async function remoteSave(json) {
   const res = await fetch(API, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: `{"tasks":${json},"pickCount":${currentPickCount()}}`,
+    body: `{"tasks":${json}}`,
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
@@ -581,10 +594,6 @@ async function init() {
       tasks = remote.tasks;
       try { localStorage.setItem(KEY, JSON.stringify(tasks)); } catch (e) {}
     }
-    if (typeof remote.pickCount === "number") {
-      $("#pick-count").value = remote.pickCount;
-      try { localStorage.setItem(PICK_KEY, String(remote.pickCount)); } catch (e) {}
-    }
     setSync("Saved");
   } catch (e) {
     setSync("Server unreachable. Showing this device's copy.");
@@ -608,12 +617,84 @@ function toggle(id) {
   const t = find(id);
   if (!t) return;
   checkpoint();
-  t.done = !t.done;
-  t.doneAt = t.done ? Date.now() : null;
-  if (t.done) picked.delete(id);
+  setDone(t, !t.done);
   save();
   render();
 }
+
+// Marking the main item done or open also marks its sub-items done or open.
+function setDone(t, done) {
+  t.done = done;
+  t.doneAt = done ? Date.now() : null;
+  if (done) picked.delete(t.id);
+  subsOf(t).forEach((s) => { s.done = done; });
+}
+
+// All sub-items done: the main item is done. Any sub-item open: the main item is open.
+function syncMain(t) {
+  const subs = subsOf(t);
+  if (!subs.length) return;
+  const allDone = subs.every((s) => s.done);
+  if (allDone && !t.done) {
+    t.done = true;
+    t.doneAt = Date.now();
+  } else if (!allDone && t.done) {
+    t.done = false;
+    t.doneAt = null;
+  }
+}
+
+function subsOf(t) {
+  if (!Array.isArray(t.subs)) t.subs = [];
+  return t.subs;
+}
+
+function newSubId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function toggleSub(id, subId) {
+  const t = find(id);
+  const s = t && subsOf(t).find((x) => x.id === subId);
+  if (!s) return;
+  checkpoint();
+  s.done = !s.done;
+  syncMain(t);
+  save();
+  render();
+}
+
+function addSub(id, raw) {
+  const t = find(id);
+  const value = raw.replace(/\u00a0/g, " ").trim().slice(0, 500);
+  if (!t || !value) return;
+  checkpoint();
+  subsOf(t).push({ id: newSubId(), text: value, done: false });
+  syncMain(t);
+  save();
+  render();
+}
+
+// Saved when the cursor leaves a sub-item. An empty sub-item is removed.
+function commitSub(id, subId, raw) {
+  const t = find(id);
+  const s = t && subsOf(t).find((x) => x.id === subId);
+  if (!s) return;
+  const value = raw.replace(/\u00a0/g, " ").trim().slice(0, 500);
+  if (!value) {
+    checkpoint();
+    t.subs = t.subs.filter((x) => x.id !== subId);
+    syncMain(t);
+    save();
+    return render();
+  }
+  if (value !== s.text) {
+    checkpoint();
+    s.text = value;
+    save();
+  }
+}
+
 function rename(id, text) {
   const t = find(id);
   text = text.trim();
@@ -633,24 +714,21 @@ function remove(id) {
 }
 
 function pickRandom() {
-  const n = Math.max(1, parseInt($("#pick-count").value, 10) || 1);
-  const arr = tasks.filter((t) => !t.done);
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+  const open = visiblePending();
+  const priority = open.filter((t) => t.priority);
+  const normal = open.filter((t) => !t.priority);
+  if (normal.length < 2) {
+    $("#status").textContent = "Nothing to shuffle yet.";
+    return;
   }
-  picked = new Set(arr.slice(0, n).map((t) => t.id));
-  render();
-  const k = picked.size;
-  $("#status").textContent = k === 0
-    ? "No open to-dos to pick from."
-    : k < n
-      ? `Only ${k} open to-do${k === 1 ? "" : "s"} to pick from.`
-      : `Picked ${k} at random.`;
-}
-function clearPick() {
-  picked.clear();
-  $("#status").textContent = "";
+  for (let i = normal.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [normal[i], normal[j]] = [normal[j], normal[i]];
+  }
+  checkpoint();
+  writePendingOrder([...priority, ...normal]);
+  $("#status").textContent = "Shuffled.";
+  save();
   render();
 }
 
@@ -858,13 +936,65 @@ function togglePriority(id) {
   render();
 }
 
+// Sub-items under the main text. Done sub-items are struck through.
+function subList(t, subs) {
+  return el("ul", { class: "subs" }, subs.map((s) => {
+    const cb = el("input", { type: "checkbox", "aria-label": "Mark sub-item as done", onchange: () => toggleSub(t.id, s.id) });
+    cb.checked = s.done;
+    return el("li", { class: "subrow" + (s.done ? " done" : "") },
+      cb,
+      el("span", {
+        class: "subtext", contenteditable: "true", spellcheck: "false", role: "textbox", "aria-label": "Sub-item text",
+        onblur: (e) => commitSub(t.id, s.id, e.target.innerText),
+        onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } },
+      }, s.text));
+  }));
+}
+
+// Box for adding a sub-item. Enter adds it and keeps the box open for the next one.
+function subAdder(t) {
+  let handled = false;
+  const inp = el("input", {
+    class: "subadd", type: "text", placeholder: "Sub-item", "aria-label": "New sub-item",
+    maxlength: 500, enterkeyhint: "done",
+  });
+  subInputEl = inp;
+  inp.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const v = inp.value;
+      inp.value = "";
+      if (v.trim()) {
+        addSub(t.id, v);
+      } else {
+        handled = true;
+        subAddId = null;
+        render();
+      }
+    } else if (e.key === "Escape") {
+      handled = true;
+      inp.value = "";
+      subAddId = null;
+      render();
+    }
+  });
+  inp.addEventListener("blur", () => {
+    if (handled || subInputEl !== inp || subAddId !== t.id) return;
+    subAddId = null;
+    const v = inp.value;
+    if (v.trim()) addSub(t.id, v);
+    else render();
+  });
+  return inp;
+}
+
 function row(t) {
+  const subs = subsOf(t);
   const classes = ["item"];
   if (t.done) classes.push("done");
   if (!t.done && t.priority) classes.push("priority");
-  if (picked.has(t.id)) classes.push("picked");
 
-  // One row of icons under the text: reorder, done, priority, then delete
+  // Icons under the text: reorder, done, priority, add sub-item, delete
   const cb = el("input", { type: "checkbox", "aria-label": "Mark as done", onchange: () => toggle(t.id) });
   cb.checked = t.done;
   const bar = [];
@@ -878,6 +1008,10 @@ function row(t) {
       title: t.priority ? "Remove priority" : "Set as priority",
       onclick: () => togglePriority(t.id),
     }, t.priority ? "★" : "☆"));
+    bar.push(el("button", {
+      class: "subbtn", type: "button", "aria-label": "Add sub-item", title: "Add sub-item",
+      onclick: () => { subAddId = t.id; render(); },
+    }, "⊕"));
   }
   bar.push(el("span", { class: "spacer" }));
   bar.push(el("button", { class: "del", type: "button", "aria-label": "Delete to-do", onclick: () => remove(t.id) }, "×"));
@@ -904,10 +1038,15 @@ function row(t) {
     },
   }, t.text);
 
-  return el("li", { class: classes.join(" "), "data-id": t.id }, content, el("div", { class: "bar" }, ...bar));
+  const parts = [content];
+  if (subs.length) parts.push(subList(t, subs));
+  if (subAddId === t.id && !t.done) parts.push(subAdder(t));
+  parts.push(el("div", { class: "bar" }, ...bar));
+  return el("li", { class: classes.join(" "), "data-id": t.id }, ...parts);
 }
 
 function render() {
+  subInputEl = null;
   const pending = visiblePending();
   const done = tasks.filter((t) => t.done).sort((a, b) => b.doneAt - a.doneAt);
 
@@ -927,9 +1066,10 @@ function render() {
   done.forEach((t) => doneList.append(row(t)));
 
   $("#count").textContent = `${pending.length} open, ${done.length} done`;
-  $("#clear-pick").hidden = picked.size === 0;
   $("#undo").disabled = !undoStack.length;
   $("#redo").disabled = !redoStack.length;
+
+  if (subAddId && subInputEl && subInputEl.isConnected) subInputEl.focus();
 
   if (focusId) {
     const target = document.querySelector('.text[data-id="' + focusId + '"]');
@@ -956,18 +1096,7 @@ document.addEventListener("keydown", (e) => {
   if (k === "z") { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
   else if (k === "y") { e.preventDefault(); redo(); }
 });
-$("#clear-pick").addEventListener("click", clearPick);
 
-try {
-  const saved = localStorage.getItem(PICK_KEY);
-  if (saved) $("#pick-count").value = saved;
-} catch (e) {}
-$("#pick-count").addEventListener("input", (e) => {
-  try { localStorage.setItem(PICK_KEY, e.target.value); } catch (err) {}
-});
-$("#pick-count").addEventListener("change", () => {
-  if (loaded) save();
-});
 
 // iPhone Safari pinch-zoom gestures
 ["gesturestart", "gesturechange", "gestureend"].forEach((type) =>
