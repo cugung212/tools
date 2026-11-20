@@ -56,11 +56,35 @@ function lastForReminder(r, v) {
   return r.lastDate ? { date: r.lastDate, km: r.lastKm } : null;
 }
 
-// Due status from a lifespan (km and/or months) counted from the last entry.
-function evalDue(lifeKm, lifeMonths, last, v, km, today, lang) {
+// A part's next due: the Next due values on its latest entry, or its lifespan counted from that entry.
+function partKmTarget(p, last) {
+  if (!last) return null;
+  if (isNum(last.nextKm)) return Number(last.nextKm);
+  if (isNum(p.lifeKm) && isNum(last.km)) return Number(last.km) + Number(p.lifeKm);
+  return null;
+}
+function partDateTarget(p, last) {
+  if (!last) return null;
+  if (last.nextDate) return last.nextDate;
+  if (isNum(p.lifeMonths) && last.date) return addMonths(last.date, Number(p.lifeMonths));
+  return null;
+}
+
+// A reminder's next due, from its interval counted from the last done entry.
+function reminderKmTarget(r, last) {
+  return r.mode === "km" && last && isNum(last.km) && isNum(r.intervalKm)
+    ? Number(last.km) + Number(r.intervalKm) : null;
+}
+function reminderDateTarget(r, last) {
+  return r.mode === "months" && last && last.date && isNum(r.intervalMonths)
+    ? addMonths(last.date, Number(r.intervalMonths)) : null;
+}
+
+// Due status from a next-due km and/or next-due date (either can be missing).
+function dueFrom(kmTarget, dateTarget, v, km, today, lang) {
   const found = [];
-  if (last && isNum(lifeKm) && isNum(last.km)) {
-    const remaining = Number(last.km) + Number(lifeKm) - km;
+  if (kmTarget != null) {
+    const remaining = kmTarget - km;
     const warn = Number(v.kmWarn) || 500;
     found.push({
       status: remaining <= 0 ? "overdue" : remaining <= warn ? "soon" : "ok",
@@ -69,14 +93,13 @@ function evalDue(lifeKm, lifeMonths, last, v, km, today, lang) {
         : t(lang, "km_due", { n: remaining }),
     });
   }
-  if (last && last.date && isNum(lifeMonths)) {
-    const due = addMonths(last.date, Number(lifeMonths));
-    const days = dayDiff(today, due);
+  if (dateTarget) {
+    const days = dayDiff(today, dateTarget);
     found.push({
       status: days <= 0 ? "overdue" : days <= MONTH_WARN_DAYS ? "soon" : "ok",
       text: days < 0 ? t(lang, "months_overdue", { n: -days })
         : days === 0 ? t(lang, "months_today")
-        : t(lang, "months_due", { n: days, date: due }),
+        : t(lang, "months_due", { n: days, date: dateTarget }),
     });
   }
   if (!found.length) return { status: "unknown", text: t(lang, "no_record") };
@@ -109,15 +132,13 @@ export function evaluate(v, today, lang = "en") {
   return {
     currentKm: km,
     parts: (v.parts || []).map((p) => {
-      const d = evalDue(p.lifeKm, p.lifeMonths, latestOf(p.history || []), v, km, today, lang);
+      const last = latestOf(p.history || []);
+      const d = dueFrom(partKmTarget(p, last), partDateTarget(p, last), v, km, today, lang);
       return { id: p.id, name: p.name, status: d.status, text: d.text, priority: !!p.priority };
     }),
     reminders: (v.reminders || []).map((r) => {
-      const d = evalDue(
-        r.mode === "km" ? r.intervalKm : null,
-        r.mode === "months" ? r.intervalMonths : null,
-        lastForReminder(r, v), v, km, today, lang
-      );
+      const last = lastForReminder(r, v);
+      const d = dueFrom(reminderKmTarget(r, last), reminderDateTarget(r, last), v, km, today, lang);
       return { id: r.id, name: r.name, status: d.status, text: d.text };
     }),
     documents: (v.documents || []).map((d) => ({ ...evalDocument(d, today, lang), latest: latest.has(d.id) })),
