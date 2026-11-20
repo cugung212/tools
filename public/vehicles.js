@@ -311,10 +311,22 @@ function form(fields, submitText, onSubmit) {
     }
     const input = f.options
       ? el("select", { class: "vinput" }, opts(f.options).map((o) => el("option", { value: o.value }, o.label)))
-      : el("input", { class: "vinput", type: f.type || "text", inputmode: f.inputmode, placeholder: f.placeholder });
+      : f.multiline
+        ? el("textarea", { class: "vinput vmulti", rows: 3, placeholder: f.placeholder, "aria-label": f.label })
+        : el("input", { class: "vinput", type: f.type || "text", inputmode: f.inputmode, placeholder: f.placeholder });
     if (f.value != null) input.value = f.value;
     inputs[f.name] = input;
     return el("label", { class: "vfield" }, el("span", {}, f.label), input);
+  });
+  // A field can fill itself from another field, until the user types in it
+  fields.forEach((f) => {
+    if (!f.derive) return;
+    const target = inputs[f.name];
+    const source = inputs[f.derive.from];
+    target.addEventListener("input", () => { target.dataset.touched = "1"; });
+    source.addEventListener("input", () => {
+      if (!target.dataset.touched) target.value = f.derive.fn(source.value);
+    });
   });
   return el("form", {
     class: "vform",
@@ -484,9 +496,9 @@ function lastEntry(p) {
 function partFields(p) {
   return [
     { name: "name", label: T("f_name"), placeholder: T("ph_part_name"), value: p ? p.name : "" },
-    { name: "description", label: T("f_description"), value: p ? p.description : "" },
+    { name: "description", label: T("f_description"), multiline: true, value: p ? p.description : "" },
     { name: "oem", label: T("f_oem"), value: p ? p.oem : "" },
-    { name: "brand", label: T("f_brand"), value: p ? p.brand : "" },
+    { name: "brand", label: T("f_brand"), multiline: true, value: p ? p.brand : "" },
     { name: "lifeKm", label: T("f_life_km"), type: "number", inputmode: "numeric", value: p ? p.lifeKm : "" },
     { name: "lifeMonths", label: T("f_life_months"), type: "number", inputmode: "numeric", value: p ? p.lifeMonths : "" },
     { name: "lifeText", label: T("f_life_text"), value: p ? p.lifeText : "" },
@@ -519,9 +531,12 @@ function updatePart(p, vals) {
 
 // One tap: log this part as done today at the current mileage, using its usual action.
 function quickDone(v, p) {
+  const date = todayVN();
+  const km = currentKm(v);
   p.history.push({
-    id: uid(), date: todayVN(), km: currentKm(v), action: p.defaultAction || "Replaced",
+    id: uid(), date, km, action: p.defaultAction || "Replaced",
     cost: "", shop: "", notes: "", visitId: "",
+    nextKm: nextKmFor(p, km), nextDate: nextDateFor(p, date),
   });
   render();
   persist();
@@ -582,6 +597,7 @@ function partDetailView(v, p) {
   const shops = p.history
     .filter((h) => h.shop && toNum(h.cost) != null)
     .sort((a, b) => toNum(a.cost) - toNum(b.cost));
+  const flat = (s) => (s || "").replace(/\n+/g, " · ");
   return el("div", {},
     el("button", { class: "vback", type: "button", onclick: () => goDetail(v.id, "parts") }, T("back_parts")),
     el("h1", {}, p.name),
@@ -590,9 +606,9 @@ function partDetailView(v, p) {
     el("div", { class: "vcard" },
       el("h2", {}, T("part_details")),
       [
-        p.description,
+        flat(p.description),
         p.oem ? T("f_oem") + ": " + p.oem : "",
-        p.brand ? T("f_brand") + ": " + p.brand : "",
+        p.brand ? T("f_brand") + ": " + flat(p.brand) : "",
         p.lifeText ? T("f_life_text") + ": " + p.lifeText : "",
         T("f_default_action") + ": " + actionLabel(p.defaultAction),
       ].filter(Boolean).map((l) => el("div", { class: "vmuted" }, l))),
@@ -622,14 +638,28 @@ function partDetailView(v, p) {
     addBlock(T("add_entry"), entryFields(v, p), T("save_entry"), (vals) => addEntry(v, p, vals)));
 }
 
-function entryFields(v, p) {
+// Adding an entry fills Next due from the part's lifespan; editing keeps the saved values.
+function entryFields(v, p, entry) {
+  const auto = !entry;
+  const km = entry ? entry.km : currentKm(v);
+  const date = entry ? entry.date : todayVN();
   return [
-    { name: "action", label: T("f_action"), options: actionOptions(), value: p.defaultAction || "Replaced" },
-    { name: "date", label: T("f_date"), type: "date", value: todayVN() },
-    { name: "km", label: T("f_km"), type: "number", inputmode: "numeric", value: currentKm(v) },
-    { name: "cost", label: T("f_cost"), type: "number", inputmode: "numeric" },
-    { name: "shop", label: T("f_shop") },
-    { name: "notes", label: T("f_notes") },
+    { name: "action", label: T("f_action"), options: actionOptions(), value: entry ? entry.action : (p.defaultAction || "Replaced") },
+    { name: "date", label: T("f_date"), type: "date", value: date },
+    { name: "km", label: T("f_km"), type: "number", inputmode: "numeric", value: km },
+    { name: "cost", label: T("f_cost"), type: "number", inputmode: "numeric", value: entry ? entry.cost : "" },
+    { name: "shop", label: T("f_shop"), value: entry ? entry.shop : "" },
+    { name: "notes", label: T("f_notes"), multiline: true, value: entry ? entry.notes : "" },
+    {
+      name: "nextKm", label: T("f_next_km"), type: "number", inputmode: "numeric",
+      value: entry ? (entry.nextKm ?? "") : nextKmFor(p, km),
+      derive: auto ? { from: "km", fn: (x) => nextKmFor(p, x) } : null,
+    },
+    {
+      name: "nextDate", label: T("f_next_date"), type: "date",
+      value: entry ? (entry.nextDate || "") : nextDateFor(p, date),
+      derive: auto ? { from: "date", fn: (x) => nextDateFor(p, x) } : null,
+    },
   ];
 }
 
@@ -638,6 +668,7 @@ function addEntry(v, p, vals) {
   p.history.push({
     id: uid(), date: vals.date, km: toNum(vals.km) ?? "", action: vals.action || "Replaced",
     cost: toNum(vals.cost) ?? "", shop: vals.shop || "", notes: vals.notes || "", visitId: "",
+    nextKm: toNum(vals.nextKm) ?? "", nextDate: vals.nextDate || "",
   });
   persist();
   return "";
@@ -909,6 +940,7 @@ function addVisit(v, vals) {
       p.history.push({
         id: uid(), date: visit.date, km: visit.km, action: visit.action,
         cost: "", shop: "", notes: visit.notes, visitId: visit.id,
+        nextKm: nextKmFor(p, visit.km), nextDate: nextDateFor(p, visit.date),
       });
     }
   }
@@ -1145,6 +1177,39 @@ function reportView() {
       (shown) => reportGroups(shown), { emptyKey: "report_none" }));
 }
 
+// ---- Next due ----
+
+const isNumC = (x) => x !== "" && x != null && Number.isFinite(Number(x));
+
+function addMonthsClient(dateStr, months) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const first = new Date(Date.UTC(y, m - 1 + months, 1));
+  const lastDay = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+  first.setUTCDate(Math.min(d, lastDay));
+  return first.toISOString().slice(0, 10);
+}
+
+// Next due km and date, from the part's lifespan counted from this entry
+function nextKmFor(p, km) {
+  const k = toNum(km);
+  return k != null && isNumC(p.lifeKm) ? k + Number(p.lifeKm) : "";
+}
+function nextDateFor(p, date) {
+  return date && isNumC(p.lifeMonths) ? addMonthsClient(date, Number(p.lifeMonths)) : "";
+}
+
+function updateEntry(p, h, vals) {
+  if (!vals.date) return T("err_entry");
+  Object.assign(h, {
+    date: vals.date, km: toNum(vals.km) ?? "", action: vals.action || "Replaced",
+    cost: toNum(vals.cost) ?? "", shop: vals.shop || "", notes: vals.notes || "",
+    nextKm: toNum(vals.nextKm) ?? "", nextDate: vals.nextDate || "",
+  });
+  view.editingEntryId = null;
+  persist();
+  return "";
+}
+
 // ---- Search ----
 
 function searchKey(part) {
@@ -1200,11 +1265,29 @@ function visitItem(v, s) {
 }
 
 function historyItem(v, p, h) {
+  if (view.editingEntryId === h.id) {
+    return el("div", {},
+      form(entryFields(v, p, h), T("save_entry"), (vals) => updateEntry(p, h, vals)),
+      el("button", { class: "vback", type: "button", onclick: () => { view.editingEntryId = null; note = ""; render(); } }, T("cancel")));
+  }
+  const hasNext = (h.nextKm !== "" && h.nextKm != null) || !!h.nextDate;
+  const nextText = hasNext
+    ? T("next_line", {
+        km: h.nextKm !== "" && h.nextKm != null ? fmtKm(h.nextKm) : T("dash"),
+        date: h.nextDate || T("dash"),
+      })
+    : "";
   return item(
     actionLabel(h.action) + " · " + h.date,
     null,
-    [fmtKm(h.km), h.cost !== "" && h.cost != null && toNum(h.cost) ? fmtMoney(h.cost) : "", h.shop, h.notes],
-    [delBtn(() => { p.history = p.history.filter((x) => x.id !== h.id); render(); persist(); })]);
+    [fmtKm(h.km), h.cost !== "" && h.cost != null && toNum(h.cost) ? fmtMoney(h.cost) : "", h.shop, h.notes, nextText],
+    [
+      el("button", {
+        type: "button",
+        onclick: () => { view.editingEntryId = h.id; view.editing = false; note = ""; render(); },
+      }, T("edit_entry")),
+      delBtn(() => { p.history = p.history.filter((x) => x.id !== h.id); render(); persist(); }),
+    ]);
 }
 
 function reminderItem(v, r, ev) {

@@ -121,3 +121,6 @@
 @media (prefers-reduced-motion: reduce) {
   #view-vehicles, #vehicles-root .vscreen-forward, #vehicles-root .vscreen-back, #vehicles-root .vscreen-fade { animation: none; }
 }
+
+/* Multi-line fields */
+#vehicles-root textarea.vmulti { min-height: 84px; resize: vertical; font-family: inherit; font-size: 16px; }
