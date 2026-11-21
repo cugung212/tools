@@ -186,7 +186,77 @@ async function refreshStatuses() {
 }
 
 // Saves are queued one at a time; each sends the latest list, language and reminder time.
+// Undo and redo for all Vehicles data. Each saved change keeps the state before it.
+const HISTORY_LIMIT = 50;
+let undoStack = [];
+let redoStack = [];
+let baseline = ""; // the saved state the next change is compared with
+
+const snapshot = () => JSON.stringify(vehicles);
+
+function recordHistory() {
+  const now = snapshot();
+  if (baseline && now !== baseline) {
+    undoStack.push(baseline);
+    if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+    redoStack = [];
+  }
+  baseline = now;
+}
+
+function undo() {
+  if (!undoStack.length) return;
+  redoStack.push(snapshot());
+  restoreState(undoStack.pop());
+}
+
+function redo() {
+  if (!redoStack.length) return;
+  undoStack.push(snapshot());
+  restoreState(redoStack.pop());
+}
+
+function restoreState(json) {
+  vehicles = JSON.parse(json);
+  baseline = json;
+  note = "";
+  view.odoEditing = false;
+  view.odoDraft = null;
+  view.adding = false;
+  view.importing = false;
+  view.editing = false;
+  view.editingEntryId = null;
+  view.brandForm = null;
+  view.modelForm = null;
+  cache();
+  render();
+  persist();
+}
+
+function arrowIcon(redoArrow) {
+  const span = document.createElement("span");
+  const d = redoArrow
+    ? '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>'
+    : '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>';
+  span.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>';
+  return span;
+}
+
+// Small undo and redo buttons shown on the title line of each Vehicles screen
+function historyButtons() {
+  return el("span", { class: "vhist" },
+    el("button", {
+      class: "vhistbtn", type: "button", "aria-label": T("undo"), title: T("undo"),
+      disabled: undoStack.length === 0, onclick: undo,
+    }, arrowIcon(false)),
+    el("button", {
+      class: "vhistbtn", type: "button", "aria-label": T("redo"), title: T("redo"),
+      disabled: redoStack.length === 0, onclick: redo,
+    }, arrowIcon(true)));
+}
+
 function persist() {
+  recordHistory();
   cache();
   chain = chain
     .then(() => fetch("/api/vehicles", {
@@ -221,6 +291,7 @@ async function load() {
     } else {
       vehicles = readCache() || seed();
       migrated = vehicles.map((v) => migrate(v)).some(Boolean);
+      baseline = snapshot();
       cache();
       await persist();
       return;
@@ -230,6 +301,7 @@ async function load() {
     note = T("showing_copy");
   }
   migrated = vehicles.map((v) => migrate(v)).some(Boolean) || migrated;
+  baseline = snapshot();
   cache();
   updateTabLabel();
   if (migrated) persist();
@@ -347,7 +419,7 @@ function pushCard() {
 
 // A form field can fill itself from other fields (derive) until the user types in it.
 // A select can refill its options when another select changes (optionsFrom).
-function form(fields, submitText, onSubmit) {
+function form(fields, submitText, onSubmit, onCancel) {
   const inputs = {};
   const rows = fields.map((f) => {
     if (f.checks) {
@@ -395,6 +467,8 @@ function form(fields, submitText, onSubmit) {
       });
     }
   });
+  const buttons = [el("button", { class: "primary", type: "submit" }, submitText)];
+  if (onCancel) buttons.push(el("button", { type: "button", onclick: onCancel }, T("cancel")));
   return el("form", {
     class: "vform",
     autocomplete: "off",
@@ -405,7 +479,7 @@ function form(fields, submitText, onSubmit) {
       note = onSubmit(vals) || "";
       render();
     },
-  }, rows, el("button", { class: "primary", type: "submit" }, submitText));
+  }, rows, onCancel ? el("div", { class: "vformbar" }, buttons) : buttons);
 }
 
 function addBlock(label, fields, submitText, handler) {
@@ -575,7 +649,7 @@ function vehicleCard(v) {
 
 function garageView() {
   return el("div", {},
-    el("h1", {}, T("vehicles_title")),
+    el("div", { class: "vtitlerow" }, el("h1", {}, T("vehicles_title")), historyButtons()),
     el("div", { class: "vrow vsubrow" },
       el("p", { class: "vsub" }, vehicles.length === 1 ? T("vehicle_one") : T("vehicles_many", { n: vehicles.length })),
       languageSwitch()),
@@ -711,17 +785,21 @@ function linkify(text) {
 
 function detailView(v) {
   const tabs = ["parts", "services", "reminders", "fuel", "expenses", "documents"];
+  const meta = [v.year, v.plate].filter(Boolean).join(" · ");
   return el("div", {},
-    el("button", { class: "vback", type: "button", onclick: goGarage }, T("back")),
-    el("h1", {}, v.name),
-    el("p", { class: "vmuted" }, [v.make, v.model, v.year, v.plate].filter(Boolean).join(" · ")),
-    el("div", { class: "vtop" },
-      chip(vehicleStatus(v)),
-      odoValue(v),
+    el("div", { class: "vbar" },
+      el("div", { class: "vbar-left" },
+        el("button", { class: "vback", type: "button", onclick: goGarage }, T("back")),
+        chip(vehicleStatus(v)),
+        odoValue(v)),
       el("button", {
         class: "vdetailsbtn", type: "button", "aria-pressed": String(!!view.detailsOpen),
         onclick: () => { view.detailsOpen = !view.detailsOpen; note = ""; render(); },
       }, T("details_btn"))),
+    el("div", { class: "vtitlerow" },
+      el("h1", {}, v.name),
+      meta ? el("span", { class: "vmeta" }, meta) : null,
+      historyButtons()),
     note ? el("p", { class: "vnote" }, note) : null,
     vehicleDetailsBlock(v),
     el("div", { class: "vtabs" }, tabs.map((key) => el("button", {
@@ -924,10 +1002,8 @@ function partRow(v, p, canDrag) {
         starBtn(p),
         el("button", { class: "vlink", type: "button", onclick: () => openPart(p.id) }, p.name)),
       chip(st.status)),
-    el("div", { class: "vmuted" }, last
-      ? T("last_done", { action: actionLabel(last.action), date: last.date, km: fmtKm(last.km) })
-      : T("part_no_history")),
-    el("div", { class: "vmuted" }, st.text),
+    last ? el("div", { class: "vmuted" }, T("last_done", { action: actionLabel(last.action), date: last.date, km: fmtKm(last.km) })) : null,
+    st.status !== "unknown" ? el("div", { class: "vmuted" }, st.text) : null,
     el("div", { class: "vactions" },
       el("button", { type: "button", onclick: () => quickDone(v, p) }, T("done_today"))));
   return reorderRow(partScope(v), p.id, card, canDrag);
@@ -942,7 +1018,7 @@ function partsTab(v) {
     onclick: () => { view.importing = true; importPreview = null; importText = ""; note = ""; render(); },
   }, T("import_sheet"));
   return el("div", {},
-    list.length ? el("p", { class: "vmuted" }, T("reorder_hint")) : el("p", { class: "vmuted" }, T("no_parts_yet")),
+    list.length ? null : el("p", { class: "vmuted" }, T("no_parts_yet")),
     list.length
       ? searchable(searchKey("parts"), list, partText,
           (shown, unfiltered) => shown.map((p) => partRow(v, p, unfiltered)),
@@ -960,8 +1036,8 @@ function partDetailView(v, p) {
     .sort((a, b) => toNum(a.cost) - toNum(b.cost));
   return el("div", {},
     el("button", { class: "vback", type: "button", onclick: () => goDetail(v.id, "parts") }, T("back_parts")),
-    el("h1", {}, p.name),
-    el("div", { class: "vrow vsubrow" }, el("span", { class: "vmuted" }, st.text), chip(st.status)),
+    el("div", { class: "vtitlerow" }, el("h1", {}, p.name), historyButtons()),
+    el("div", { class: "vrow vsubrow" }, el("span", { class: "vmuted" }, st.status !== "unknown" ? st.text : ""), chip(st.status)),
     note ? el("p", { class: "vnote" }, note) : null,
     el("div", { class: "vcard" },
       el("h2", {}, T("part_details")),
@@ -1493,7 +1569,11 @@ function reminderItem(v, r, ev) {
     }, T("done_today")));
   }
   actions.push(delBtn(() => { v.reminders = v.reminders.filter((x) => x.id !== r.id); persist(); }));
-  return item(r.name, chip(st.status), [st.text, every, r.link ? T("link_follows", { x: linkLabel(v, r.link) }) : ""], actions);
+  return item(r.name, chip(st.status), [
+    st.status !== "unknown" ? st.text : "",
+    every,
+    r.link ? T("link_follows", { x: linkLabel(v, r.link) }) : "",
+  ], actions);
 }
 
 function remindersTab(v) {
@@ -1595,10 +1675,11 @@ function expensesTab(v) {
 
 function documentItem(v, d, ev) {
   const st = ev.find((x) => x.id === d.id) || { status: "unknown", text: "", latest: false };
+  const showText = st.latest && st.status !== "unknown";
   return item(
     docLabel(d.type),
     chip(st.latest ? st.status : "unknown", st.latest ? null : T("status_older")),
-    [T("issued_line", { issued: d.issued || T("dash"), expires: d.expires || T("dash") }), st.latest ? st.text : ""],
+    [T("issued_line", { issued: d.issued || T("dash"), expires: d.expires || T("dash") }), showText ? st.text : ""],
     [delBtn(() => { v.documents = v.documents.filter((x) => x.id !== d.id); persist(); })]);
 }
 
@@ -1658,7 +1739,7 @@ function vehicleDetailsBlock(v) {
       view.detailsOpen = false;
       persist();
       return "";
-    }),
+    }, () => { view.detailsOpen = false; note = ""; render(); }),
     links.length
       ? el("div", { class: "vlinks" },
           el("strong", {}, T("links_label")),

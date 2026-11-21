@@ -180,3 +180,28 @@
 #vehicles-root .vdetailsbox h2 { margin: 0 0 8px; }
 #vehicles-root .vlinks { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 12px; font-size: 0.95rem; }
 #vehicles-root .vlinks a { color: var(--accent); overflow-wrap: anywhere; }
+
+/* Compact vehicle header: Back, status, ODO and Details on one line; name and details on one line */
+#vehicles-root .vbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin: 0 0 6px; }
+#vehicles-root .vbar-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+#vehicles-root .vbar .vback { margin: 0; padding: 8px 14px; font-size: 0.95rem; }
+#vehicles-root .vbar .vchip { font-size: 0.75rem; padding: 3px 9px; }
+#vehicles-root .vbar .vodo-wrap { font-size: 0.9rem; gap: 4px; }
+#vehicles-root .vbar .vodo-value { font-size: 0.95rem; }
+#vehicles-root .vdetailsbtn { padding: 8px 14px; font-size: 0.95rem; }
+#vehicles-root .vtitlerow { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0 14px; }
+#vehicles-root .vtitlerow h1 { margin: 0; }
+#vehicles-root .vmeta { color: var(--muted); font-size: 0.95rem; }
+
+/* Undo and redo */
+#vehicles-root .vhist { display: inline-flex; gap: 6px; margin-left: auto; }
+#vehicles-root .vhistbtn {
+  width: 36px; height: 36px; padding: 0; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+#vehicles-root .vhistbtn svg { width: 18px; height: 18px; flex: none; }
+#vehicles-root .vhistbtn:disabled { opacity: 0.35; }
+
+/* Forms with Save and Cancel side by side */
+#vehicles-root .vformbar { display: flex; gap: 8px; flex-wrap: wrap; }
+#vehicles-root .vformbar .primary { flex: 1; min-width: 120px; }
