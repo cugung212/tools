@@ -29,7 +29,7 @@ let lastDepth = 0;
 function freshView(name) {
   return {
     name, vehicleId: null, partId: null, tab: "parts", adding: false, editing: false, importing: false,
-    odoEditing: false, editingNotes: false, editingEntryId: null, brandForm: null, modelForm: null,
+    odoEditing: false, odoDraft: null, odoFocusPending: false, detailsOpen: false, editingEntryId: null, brandForm: null, modelForm: null,
   };
 }
 
@@ -614,30 +614,80 @@ function currentVehicle() { return vehicles.find((x) => x.id === view.vehicleId)
 
 // ---- Current ODO ----
 
-function updateOdo(v, vals) {
-  const km = toNum(vals.odometer);
-  if (km == null) return T("err_odo");
-  const floor = logKm(v);
-  if (km < floor) return T("odo_too_low", { n: fmtNum(floor) });
-  v.odometer = km;
-  view.odoEditing = false;
-  persist();
-  return "";
+// Current ODO: tap the number to type a new reading. Enter or leaving the field saves it.
+let odoBusy = false;
+
+function toggleOdoEdit(v) {
+  view.odoEditing = true;
+  view.odoDraft = null;
+  view.odoFocusPending = true;
+  note = "";
+  render();
 }
 
-function odoCard(v) {
-  return el("div", { class: "vcard vodo" },
-    el("div", { class: "vrow" },
-      el("span", {}, T("odo_current") + ": " + fmtKm(currentKm(v))),
-      el("button", {
-        type: "button",
-        onclick: () => { view.odoEditing = !view.odoEditing; note = ""; render(); },
-      }, T("odo_update"))),
-    view.odoEditing
-      ? form([{ name: "odometer", label: T("odo_current"), type: "number", inputmode: "numeric", value: currentKm(v) }],
-          T("save_odo"), (vals) => updateOdo(v, vals))
-      : null);
+function cancelOdo() {
+  view.odoEditing = false;
+  view.odoDraft = null;
+  view.odoFocusPending = false;
+  note = "";
+  render();
 }
+
+function commitOdo(v, raw) {
+  if (odoBusy) return;
+  odoBusy = true;
+  try {
+    if (String(raw).trim() === "") return cancelOdo();
+    const km = toNum(raw);
+    if (km == null) {
+      view.odoDraft = raw;
+      view.odoFocusPending = true;
+      note = T("err_odo");
+      return render();
+    }
+    const floor = logKm(v);
+    if (km < floor) {
+      view.odoDraft = raw;
+      view.odoFocusPending = true;
+      note = T("odo_too_low", { n: fmtNum(floor) });
+      return render();
+    }
+    view.odoEditing = false;
+    view.odoDraft = null;
+    view.odoFocusPending = false;
+    note = "";
+    v.odometer = km;
+    render();
+    persist();
+  } finally {
+    odoBusy = false;
+  }
+}
+
+function odoValue(v) {
+  if (view.odoEditing) {
+    let handled = false;
+    const input = el("input", {
+      class: "vinput vodo-input", type: "number", inputmode: "numeric", "aria-label": T("odo_current"),
+      oninput: (e) => { view.odoDraft = e.target.value; },
+      onkeydown: (e) => {
+        if (e.key === "Enter") { e.preventDefault(); handled = true; commitOdo(v, e.target.value); }
+        else if (e.key === "Escape") { handled = true; cancelOdo(); }
+      },
+      onblur: (e) => { if (!handled && view.odoEditing) commitOdo(v, e.target.value); },
+    });
+    input.value = view.odoDraft != null ? view.odoDraft : String(currentKm(v));
+    return el("span", { class: "vodo-wrap" }, el("span", { class: "vodo-label" }, T("odo_label")), input);
+  }
+  return el("span", { class: "vodo-wrap" },
+    el("span", { class: "vodo-label" }, T("odo_label")),
+    el("button", {
+      class: "vodo-value", type: "button", "aria-label": T("odo_update"),
+      onclick: () => toggleOdoEdit(v),
+    }, fmtKm(currentKm(v))));
+}
+
+
 
 // ---- Details and references (multi-line, links are tappable) ----
 
@@ -655,25 +705,7 @@ function linkify(text) {
   return out;
 }
 
-function vehicleNotesCard(v) {
-  return el("div", { class: "vcard vnotes" },
-    el("div", { class: "vrow" },
-      el("h2", {}, T("vehicle_notes")),
-      el("button", {
-        type: "button",
-        onclick: () => { view.editingNotes = !view.editingNotes; note = ""; render(); },
-      }, T("edit_notes"))),
-    view.editingNotes
-      ? form([{ name: "details", label: T("f_details"), multiline: true, value: v.details || "" }], T("save_details"), (vals) => {
-          v.details = vals.details || "";
-          view.editingNotes = false;
-          persist();
-          return "";
-        })
-      : (v.details
-          ? el("div", { class: "vdetails-text" }, linkify(v.details))
-          : el("p", { class: "vmuted" }, T("notes_empty"))));
-}
+
 
 // ---- Vehicle screen ----
 
@@ -682,18 +714,21 @@ function detailView(v) {
   return el("div", {},
     el("button", { class: "vback", type: "button", onclick: goGarage }, T("back")),
     el("h1", {}, v.name),
-    el("div", { class: "vrow vsubrow" },
-      el("span", { class: "vmuted" }, [v.make, v.model, v.year, v.plate].filter(Boolean).join(" · ")),
-      chip(vehicleStatus(v))),
-    odoCard(v),
-    vehicleNotesCard(v),
+    el("p", { class: "vmuted" }, [v.make, v.model, v.year, v.plate].filter(Boolean).join(" · ")),
+    el("div", { class: "vtop" },
+      chip(vehicleStatus(v)),
+      odoValue(v),
+      el("button", {
+        class: "vdetailsbtn", type: "button", "aria-pressed": String(!!view.detailsOpen),
+        onclick: () => { view.detailsOpen = !view.detailsOpen; note = ""; render(); },
+      }, T("details_btn"))),
     note ? el("p", { class: "vnote" }, note) : null,
+    vehicleDetailsBlock(v),
     el("div", { class: "vtabs" }, tabs.map((key) => el("button", {
       type: "button", class: "vtab", "aria-pressed": String(view.tab === key),
       onclick: () => { view.tab = key; view.adding = false; view.importing = false; note = ""; render(); },
     }, T("tab_" + key)))),
-    tabBody(v),
-    vehicleDetailsBlock(v));
+    tabBody(v));
 }
 
 function tabBody(v) {
@@ -1589,17 +1624,27 @@ function documentsTab(v) {
 
 // ---- Vehicle details (edit and delete) ----
 
+// Form fields for the Details section (Current ODO is changed on the vehicle screen instead)
+function detailsFields(v) {
+  return vehicleFields(v)
+    .filter((f) => f.name !== "odometer")
+    .concat([{ name: "details", label: T("f_details"), multiline: true, value: v.details || "" }]);
+}
+
+function deleteVehicleNow(v) {
+  if (!confirm(T("delete_confirm", { name: v.name }))) return;
+  vehicles = vehicles.filter((x) => x.id !== v.id);
+  goGarage();
+  persist();
+}
+
 function vehicleDetailsBlock(v) {
-  if (!view.editing) {
-    return el("div", { class: "vactions vdetails" },
-      el("button", { type: "button", onclick: () => { view.editing = true; note = ""; render(); } }, T("edit_details")));
-  }
-  return el("div", {},
+  if (!view.detailsOpen) return null;
+  const links = (v.details || "").match(/https?:\/\/[^\s]+/g) || [];
+  return el("div", { class: "vcard vdetailsbox" },
     el("h2", {}, T("vehicle_details")),
-    form(vehicleFields(v), T("save_details"), (vals) => {
+    form(detailsFields(v), T("save_details"), (vals) => {
       if (!vals.name) return T("err_name_vehicle");
-      const odo = toNum(vals.odometer);
-      if (odo != null && odo < logKm(v)) return T("odo_too_low", { n: fmtNum(logKm(v)) });
       Object.assign(v, {
         type: vals.type || v.type,
         name: vals.name,
@@ -1608,21 +1653,18 @@ function vehicleDetailsBlock(v) {
         year: toNum(vals.year) ?? "",
         plate: vals.plate,
         kmWarn: toNum(vals.kmWarn) ?? 500,
+        details: vals.details || "",
       });
-      if (odo != null) v.odometer = odo;
-      view.editing = false;
+      view.detailsOpen = false;
       persist();
       return "";
     }),
-    el("button", {
-      class: "vdel vdelete", type: "button",
-      onclick: () => {
-        if (!confirm(T("delete_confirm", { name: v.name }))) return;
-        vehicles = vehicles.filter((x) => x.id !== v.id);
-        goGarage();
-        persist();
-      },
-    }, T("delete_vehicle")));
+    links.length
+      ? el("div", { class: "vlinks" },
+          el("strong", {}, T("links_label")),
+          links.map((u) => el("a", { href: u, target: "_blank", rel: "noopener noreferrer" }, u)))
+      : null,
+    el("button", { class: "vdel vdelete", type: "button", onclick: () => deleteVehicleNow(v) }, T("delete_vehicle")));
 }
 
 // ---- Search ----
@@ -1744,6 +1786,14 @@ function render() {
   }
   root.replaceChildren(content);
   updateTabLabel();
+  if (view.odoFocusPending) {
+    view.odoFocusPending = false;
+    const input = root.querySelector(".vodo-input");
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  }
 }
 
 function show() {
