@@ -22,6 +22,7 @@ let importText = "";
 let importPreview = null;
 let drag = null;
 let searches = {};
+let scrollMemory = {};
 let lastNav = "";
 let lastDepth = 0;
 
@@ -397,7 +398,8 @@ function languageSwitch() {
     LANGS.map((l) => el("button", {
       type: "button", class: "vtab", "aria-pressed": String(lang === l),
       onclick: () => setLanguage(l),
-    }, t(l, "lang_name"))));
+    }, t(l, "lang_name"))),
+    el("button", { type: "button", class: "vtab", "aria-label": T("settings"), onclick: openSettings }, "⚙ " + T("settings")));
 }
 
 function garageView() {
@@ -407,7 +409,6 @@ function garageView() {
       el("p", { class: "vsub" }, vehicles.length === 1 ? T("vehicle_one") : T("vehicles_many", { n: vehicles.length })),
       languageSwitch()),
     note ? el("p", { class: "vnote" }, note) : null,
-    pushCard(),
     el("div", { class: "vreport-row" },
       el("button", { class: "vreport", type: "button", onclick: openReport }, reportIcon(), T("report_open"))),
     searchable("garage", vehicles, vehicleText, (shown) => shown.map((v) => vehicleCard(v)), { emptyKey: "nothing_here" }),
@@ -422,31 +423,79 @@ function reportIcon() {
 
 // ---- Navigation ----
 
-function goGarage() {
-  view = freshView("garage");
+function viewKey(vw) {
+  return [vw.name, vw.vehicleId || "", vw.partId || "", vw.tab || ""].join("|");
+}
+
+// Moves to another screen. The screen being left keeps its scroll position, and the
+// screen being opened returns to where it was left (or to the top the first time).
+function go(next) {
+  scrollMemory[viewKey(view)] = window.scrollY;
+  view = next;
   note = "";
   render();
+  window.scrollTo(0, scrollMemory[viewKey(view)] || 0);
+}
+
+function logKm(v) {
+  let km = 0;
+  for (const s of v.services) km = Math.max(km, Number(s.km) || 0);
+  for (const f of v.fuel) km = Math.max(km, Number(f.km) || 0);
+  for (const p of v.parts) for (const h of p.history) km = Math.max(km, Number(h.km) || 0);
+  return km;
+}
+
+function updateOdo(v, vals) {
+  const km = toNum(vals.odometer);
+  if (km == null) return T("err_odo");
+  const floor = logKm(v);
+  if (km < floor) return T("odo_too_low", { n: fmtNum(floor) });
+  v.odometer = km;
+  view.odoEditing = false;
+  persist();
+  return "";
+}
+
+function odoCard(v) {
+  return el("div", { class: "vcard vodo" },
+    el("div", { class: "vrow" },
+      el("span", {}, T("odo_current") + ": " + fmtKm(currentKm(v))),
+      el("button", {
+        type: "button",
+        onclick: () => { view.odoEditing = !view.odoEditing; note = ""; render(); },
+      }, T("odo_update"))),
+    view.odoEditing
+      ? form([{ name: "odometer", label: T("odo_current"), type: "number", inputmode: "numeric", value: currentKm(v) }],
+          T("save_odo"), (vals) => updateOdo(v, vals))
+      : null);
+}
+
+function openSettings() {
+  go(freshView("settings"));
+}
+
+function settingsView() {
+  return el("div", {},
+    el("button", { class: "vback", type: "button", onclick: goGarage }, T("back")),
+    el("h1", {}, T("settings")),
+    note ? el("p", { class: "vnote" }, note) : null,
+    pushCard());
+}
+
+function goGarage() {
+  go(freshView("garage"));
 }
 
 function goDetail(id, tab) {
-  view = { ...freshView("detail"), vehicleId: id, tab: tab || "parts" };
-  note = "";
-  render();
-  window.scrollTo(0, 0);
+  go({ ...freshView("detail"), vehicleId: id, tab: tab || "parts" });
 }
 
 function openPart(id) {
-  view = { ...view, name: "part", partId: id, adding: false, editing: false, importing: false };
-  note = "";
-  render();
-  window.scrollTo(0, 0);
+  go({ ...view, name: "part", partId: id, adding: false, editing: false, importing: false, odoEditing: false });
 }
 
 function openReport() {
-  view = freshView("report");
-  note = "";
-  render();
-  window.scrollTo(0, 0);
+  go(freshView("report"));
 }
 
 function currentVehicle() {
@@ -459,8 +508,9 @@ function detailView(v) {
     el("button", { class: "vback", type: "button", onclick: goGarage }, T("back")),
     el("h1", {}, v.name),
     el("div", { class: "vrow vsubrow" },
-      el("span", { class: "vmuted" }, [v.make, v.model, v.year, v.plate].filter(Boolean).join(" · ") + " · " + fmtKm(currentKm(v))),
+      el("span", { class: "vmuted" }, [v.make, v.model, v.year, v.plate].filter(Boolean).join(" · ")),
       chip(vehicleStatus(v))),
+    odoCard(v),
     note ? el("p", { class: "vnote" }, note) : null,
     el("div", { class: "vtabs" }, tabs.map((key) => el("button", {
       type: "button", class: "vtab", "aria-pressed": String(view.tab === key),
@@ -1116,6 +1166,8 @@ function vehicleDetailsBlock(v) {
     el("h2", {}, T("vehicle_details")),
     form(vehicleFields(v), T("save_details"), (vals) => {
       if (!vals.name) return T("err_name_vehicle");
+      const odo = toNum(vals.odometer);
+      if (odo != null && odo < logKm(v)) return T("odo_too_low", { n: fmtNum(logKm(v)) });
       Object.assign(v, {
         type: vals.type || v.type,
         name: vals.name,
@@ -1359,6 +1411,8 @@ function render() {
     content = partDetailView(v, v.parts.find((p) => p.id === view.partId));
   } else if (view.name === "report") {
     content = reportView();
+  } else if (view.name === "settings") {
+    content = settingsView();
   } else {
     content = garageView();
   }
