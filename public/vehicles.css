@@ -137,3 +137,25 @@
 
 /* Current ODO card */
 #vehicles-root .vodo { margin: 12px 0 14px; padding: 12px 14px; }
+
+/* Reorderable rows (any list that can be dragged) */
+#vehicles-root .vreorder { position: relative; display: flex; align-items: flex-start; gap: 6px; list-style: none; }
+#vehicles-root .vreorder-body { flex: 1; min-width: 0; }
+#vehicles-root .vreorder > .handle { flex: none; padding: 14px 2px 6px; }
+#vehicles-root .vreorder.dragging { z-index: 2; transition: none; box-shadow: 0 14px 30px rgba(0, 0, 0, 0.3); border-radius: 16px; }
+#vehicles-root .vreorder.shift { transition: transform 0.2s ease; }
+#vehicles-root .vreorder .vcard { margin: 0; }
+@media (min-width: 768px) {
+  #vehicles-root ul.vgarage { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+}
+
+/* Brands and models */
+#vehicles-root .vbrand { padding: 6px 0 10px; border-bottom: 1px solid var(--line); }
+#vehicles-root .vmodels { list-style: none; margin: 8px 0 0; padding: 0 0 0 10px; border-left: 2px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+#vehicles-root .vmodel { padding: 6px 0; }
+
+/* Details & references */
+#vehicles-root .vnotes { margin: 12px 0 14px; }
+#vehicles-root .vnotes h2 { margin: 0; }
+#vehicles-root .vdetails-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; color: var(--ink); }
+#vehicles-root .vdetails-text a { color: var(--accent); text-decoration: underline; }
