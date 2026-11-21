@@ -1,5 +1,5 @@
 /* Vehicles tab */
-#view-vehicles { max-width: 640px; margin: 0 auto; padding: calc(36px + env(safe-area-inset-top, 0px)) 16px 110px; }
+#view-vehicles { max-width: var(--content-max); margin: 0 auto; padding: calc(36px + env(safe-area-inset-top, 0px)) 16px 110px; }
 #vehicles-root h2 { margin: 24px 4px 10px; }
 #vehicles-root .vsub, #vehicles-root .vmuted { color: var(--muted); }
 #vehicles-root .vmuted { font-size: 0.9rem; margin-top: 4px; }
@@ -124,3 +124,9 @@
 
 /* Multi-line fields */
 #vehicles-root textarea.vmulti { min-height: 84px; resize: vertical; font-family: inherit; font-size: 16px; }
+
+/* Wider screens: garage vehicles side by side (parts stay in one column so drag reorder keeps working) */
+@media (min-width: 768px) {
+  #vehicles-root .vsearch-box { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  #vehicles-root .vsearch-box > .vcard { margin: 0; }
+}
