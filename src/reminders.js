@@ -56,17 +56,30 @@ function lastForReminder(r, v) {
   return r.lastDate ? { date: r.lastDate, km: r.lastKm } : null;
 }
 
-// A part's next due: the Next due values on its latest entry, or its lifespan counted from that entry.
+// The model an entry used (brands and models are stored on the part).
+function modelOf(p, last) {
+  if (!last || !last.modelId) return null;
+  for (const b of p.brands || []) {
+    for (const m of b.models || []) if (m.id === last.modelId) return m;
+  }
+  return null;
+}
+
+// A part's next due: the Next due values on its latest entry, or the lifespan of the model used.
 function partKmTarget(p, last) {
   if (!last) return null;
   if (isNum(last.nextKm)) return Number(last.nextKm);
-  if (isNum(p.lifeKm) && isNum(last.km)) return Number(last.km) + Number(p.lifeKm);
+  const m = modelOf(p, last);
+  const lifeKm = m ? m.lifeKm : p.lifeKm; // p.lifeKm: parts saved before brands and models existed
+  if (isNum(lifeKm) && isNum(last.km)) return Number(last.km) + Number(lifeKm);
   return null;
 }
 function partDateTarget(p, last) {
   if (!last) return null;
   if (last.nextDate) return last.nextDate;
-  if (isNum(p.lifeMonths) && last.date) return addMonths(last.date, Number(p.lifeMonths));
+  const m = modelOf(p, last);
+  const lifeMonths = m ? m.lifeMonths : p.lifeMonths;
+  if (isNum(lifeMonths) && last.date) return addMonths(last.date, Number(lifeMonths));
   return null;
 }
 
